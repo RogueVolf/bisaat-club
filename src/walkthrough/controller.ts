@@ -6,7 +6,7 @@ import { placeHotspots } from "./hotspots";
 import { EYE } from "./math";
 
 type Vec3 = [number, number, number];
-/** The sign on the reception wall needs the full-resolution logo; the header <img> shows a resized copy. */
+/** The sign on the reception wall uses the same file as the header <img>, so it comes from cache. */
 const SIGN_LOGO_URL = '/brand/logo.png';
 interface Walk { t0: number; dur: number; x0: number; z0: number; y0: number; p0: number; x1: number; z1: number; dy: number; p1: number; ly: number; lp: number; steps: number }
 

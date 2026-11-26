@@ -52,12 +52,12 @@ First-frame times vary by ±20 ms between runs; the first row of a run is the no
 | | Doc KB | JS KB | CSS KB | Font KB | Image KB | Total KB |
 |---|---|---|---|---|---|---|
 | Before | 7.4 (6.3 gzip body) | 148.7 | 2.5 | 61.4 | 40.6 | ≈261 |
-| After, @3x phones | 7.8 (6.7 gzip body) | 149.4 | 2.5 | 61.4 | 48.6 | 269.7 |
-| After, @2x phones | 7.8 | 149.4 | 2.5 | 61.4 | 46.3 | 267.4 |
+| After (all devices) | 7.7 (6.6 gzip body) | 149.4 | 2.5 | 61.4 | 40.6 | 261.6 |
+| Tried and reverted: header logo srcset, @3x / @2x phones | 7.8 | 149.4 | 2.5 | 61.4 | 48.6 / 46.3 | 269.7 / 267.4 |
 
 The baseline browser figure for the document was wrong under `--strip-uir` (the route rewrite hid
 it), so the before row uses the step-2 build's document figure, which had no document changes; the
-direct gzip fetch (6.3 KB) agrees. The document grew 0.4 KB from the srcset and the mode script.
+direct gzip fetch (6.3 KB) agrees. The document grew 0.3 KB, from the mode script.
 
 ### Dark mode before first paint (iPhone 15 Pro)
 
@@ -80,12 +80,9 @@ frozen. Captures: 390×844 @3 for `#door`, `#lib`, `#lib-night` and dark-scheme 
 
 - **Canvas: 0 px differ in all 8 captures**, baseline vs after. Hotspot DOM (hidden, class, transform),
   title, mode and backing size are identical too.
-- **Page:** identical everywhere except the header logo box (for example 390×844 @3: 11,937 px in
-  x 58–447, y 30–145 device px; max channel difference 53/255, mean 6.6). That is resampling at the
-  logo's anti-aliased edges: the browser used to downscale the 1024×256 PNG; now it shows a
-  pre-resized one. Side by side they are indistinguishable. Every other change (CSS, render loop,
-  mode script) gives 0 px difference: the capture after the logo change and the final capture
-  are identical.
+- **Page: 0 px differ in all 8 screenshots**, including the header logo box. (With the reverted
+  header-logo srcset, the logo box differed at its anti-aliased edges: 11,937 px at 390×844 @3, max
+  channel difference 53/255.)
 - Two baseline captures of the same build are identical, so the method has no noise.
 
 ## Changes and their measured effect
@@ -100,12 +97,17 @@ frozen. Captures: 390×844 @3 for `#door`, `#lib`, `#lib-night` and dark-scheme 
 | Hotspot hidden / class / transform written only when changed (`spotWrites`) | Fewer style writes per frame | Same DOM at rest (diff above) |
 | Passive `pointermove`/`pointerup`/`pointercancel` | Lets Safari scroll-handling skip waiting on JS | Invisible |
 | iOS CSS: `overscroll-behavior:none` on html/body; no tap highlight on `.spot, #mode, #next, #book, #find`; no callout or selection on `#view` | No rubber-band, grey flash or long-press menu | 0 px difference at 1280×800, 390×844 and 568×320 |
-| Header logo from `logo-header.png` 1x/2x/3x srcset (168×42, 336×84, 504×126; 3.3 / 5.6 / 7.9 KB) | The header loaded the 40 KB 1024×256 file | Header image bytes 40.3 → 7.7 KB (@3x) before first paint. The sign texture still loads the full logo, so total image bytes rise 6–8 KB |
 | `Cache-Control: public, max-age=86400` on `/brand/*` | Was `max-age=0`; files are not content-hashed, so no `immutable` | Repeat visits skip revalidation for a day |
 | Mode set before first paint (nonce'd inline `<head>` script, same rules as the controller) | Dark-mode phones and `#…-night` links painted cream, then faded 0.6 s | Settle 793 → 34 ms, 0 colour changes |
 | Zones sorted by `order` locally; spots without a position are not rendered and are hidden | Task 7 review | Unit tests |
 
 ### Steps measured and skipped
+
+- **Header logo srcset (step 5): tried and reverted.** A resized 1x/2x/3x header logo (3.3 / 5.6 /
+  7.9 KB) cut the header's own image from 40.3 to 7.7 KB. But the WebGL sign texture loads the full
+  `/brand/logo.png` anyway, and the header gets that file from cache when they share it. Splitting them
+  added 6–8 KB to total transfer and changed the logo's edge pixels (up to 53/255), which broke
+  still-frame identity. The header uses `/brand/logo.png` again.
 
 - **Adaptive moving resolution (step 3):** iPhone 15 Pro walk and drag p95 are 19 ms (≤ 20 ms), so it
   was not added. The reference ×0.55 moving factor is unchanged. Resize cost does not show up either.

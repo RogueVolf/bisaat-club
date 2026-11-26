@@ -38,7 +38,7 @@ describe("page shell", () => {
   });
   it("renders header and DOM contract", () => {
     const h = html();
-    expect(h).toContain('src="/brand/logo-header.png" srcSet="/brand/logo-header.png 1x, /brand/logo-header@2x.png 2x, /brand/logo-header@3x.png 3x"');
+    expect(h).toContain('src="/brand/logo.png"');
     expect(h).toContain("Opens Sat 12 Dec");
     expect(h).toContain('<span id="count"></span>');
     for (const id of ["stage", "top", "brand", "right", "open", "mode", "sun", "moon", "view", "gl", "nogl", "hint", "sheet", "copy", "kicker", "rule", "body", "price", "actions", "next"])
