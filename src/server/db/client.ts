@@ -1,0 +1,41 @@
+import "server-only";
+import { MongoClient, type Db } from "mongodb";
+import { assertTlsPolicy } from "./tls";
+
+export { assertTlsPolicy };
+
+type Role = "read" | "write";
+const ENV: Record<Role, string> = { read: "MONGODB_URI_READ", write: "MONGODB_URI_WRITE" };
+
+const g = globalThis as unknown as { __bisaatMongo?: Partial<Record<Role, Promise<MongoClient>>> };
+
+function connect(role: Role): Promise<MongoClient> {
+  const cache = (g.__bisaatMongo ??= {});
+  const existing = cache[role];
+  if (existing) return existing;
+  const uri = process.env[ENV[role]];
+  if (!uri) throw new Error(`Missing environment variable ${ENV[role]}`);
+  assertTlsPolicy(uri, process.env.NODE_ENV ?? "development");
+  const p = new MongoClient(uri, { serverSelectionTimeoutMS: 2000 })
+    .connect()
+    .catch((e: unknown) => {
+      delete cache[role];
+      throw e;
+    });
+  cache[role] = p;
+  return p;
+}
+
+function dbName(): string {
+  const name = process.env.MONGODB_DB;
+  if (!name) throw new Error("Missing environment variable MONGODB_DB");
+  return name;
+}
+
+export async function getReadDb(): Promise<Db> {
+  return (await connect("read")).db(dbName());
+}
+
+export async function getWriteDb(): Promise<Db> {
+  return (await connect("write")).db(dbName());
+}
