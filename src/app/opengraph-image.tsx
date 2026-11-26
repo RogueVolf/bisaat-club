@@ -8,6 +8,7 @@ import { getSiteContent } from "@/server/content/repository";
 export const alt = "Bisaat Club. Play. Read. Stay.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
+export const revalidate = 60;
 
 const [font, logo] = await Promise.all([
   readFile(join(process.cwd(), "assets/fonts/DMSans-Bold.ttf")),

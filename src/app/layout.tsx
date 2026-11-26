@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 import { headers } from "next/headers";
+import { siteUrl } from "@/server/site-url";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -14,7 +15,7 @@ const DESCRIPTION =
   "PS5, sim racing, board games and a free library on one floor in Frazer Town, Bangalore. Open 9 AM to 11 PM. One rule: no laptops.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.SITE_URL ?? "http://localhost:3000"),
+  metadataBase: siteUrl(),
   title: "Bisaat Club — Walk the floor",
   description: DESCRIPTION,
   openGraph: {
