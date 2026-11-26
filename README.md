@@ -50,8 +50,8 @@ The users are only created on a fresh Docker volume. For an existing volume, see
 | `npm run build` / `npm start` | Production build and server |
 | `npm run lint` / `npm run typecheck` | ESLint and TypeScript |
 | `npm test` | Unit tests plus the Docker-backed integration test (needs MongoDB running and `MONGODB_URI_TEST`) |
-| `npm run test:e2e` | Playwright smoke tests on iPhone 13 (WebKit) and a 375x667 Chromium viewport |
-| `npm run compare` | Screenshots the app against the reference page for all six zones, light and dark, with mismatch percentages in `test-results/compare/` |
+| `npm run test:e2e` | Playwright smoke tests (builds and serves on port 3200): WebKit iPhone 13 and iPhone SE, plus a 390x844 Chromium sanity project |
+| `npm run compare` | Screenshots the reference page and the app (serve it on port 3200 first, or pass a URL or `SITE_URL`) for all six zones, light and dark, with mismatch percentages in `test-results/compare/`. Add `--webkit` for Safari. Fails if a canvas region differs by more than 0.5% |
 | `npm run measure:iphone` | Frame-time and load measurements for iPhone-class devices |
 | `npm run seed` | Seed MongoDB (see below) |
 

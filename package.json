@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "compare": "tsx scripts/compare-reference.ts",
     "seed": "tsx scripts/seed.ts",
     "measure:iphone": "tsx scripts/measure-iphone.ts"
   },
