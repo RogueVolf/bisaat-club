@@ -26,7 +26,7 @@ The site process never holds write credentials. The extra role lets the seed scr
 
 ### Existing volumes and managed clusters
 
-The init script does not re-run on an existing volume. Apply the role by hand as an admin user in `mongosh` (placeholders, never commit real values):
+The init script does not re-run on an existing volume. On self-hosted MongoDB, apply the role by hand as an admin user in `mongosh` (placeholders, never commit real values). This snippet is self-hosted only; on Atlas, custom roles are created under Database Access instead:
 
 ```js
 const appDb = db.getSiblingDB("bisaat");
@@ -46,7 +46,7 @@ appDb.createUser({
 });
 ```
 
-On Atlas, create the same two users in Database Access (built-in `read` and `readWrite` on `bisaat`, plus the custom role). Use distinct strong passwords.
+On Atlas, create the custom role and the same two users in Database Access (built-in `read` and `readWrite` on `bisaat`, plus the custom role). Use distinct strong passwords.
 
 ## Connection security
 
@@ -103,4 +103,4 @@ Sent on every proxied response (`src/server/http/security-headers.ts`):
 
 - `.env` is git-ignored; `.env.example` lists names only. See the README for the table.
 - Use a secret manager or host-level env configuration in production. Rotate the DB passwords if they were ever shared.
-- `SITE_URL` is not secret but must be set in production (metadata and structured data). When missing, the app logs one warning and uses localhost.
+- `SITE_URL` is not secret but must be set in production (metadata and structured data). The app logs one warning, once per process, only when `NODE_ENV=production` and `SITE_URL` is unset, empty or invalid, and then uses localhost.

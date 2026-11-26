@@ -65,7 +65,7 @@ First e2e run: `npx playwright install webkit chromium`.
 
 ## Changing content without a deploy
 
-Edit the documents in MongoDB. The site re-reads content at most every 60 seconds, so changes go live within about a minute (an API or CDN cache may add up to its own 60 s). Use the read-write user in `mongosh`; the validators reject malformed edits.
+Edit the documents in MongoDB. The site re-reads content at most every 60 seconds, so changes go live within about a minute (an API or CDN cache may add up to its own 60 s). Use the read-write user in `mongosh`. The database validators only check types, enums and required fields, so edits must also follow the formats in `src/content/schema.ts` (for example the `openingAt` format, `whatsapp`, https URLs). An edit that passes MongoDB but fails the app's zod check is silently replaced by the bundled seed, and that fallback can be cached for up to 60 s. After an edit, run `curl <site>/api/content | grep source`: it should say `"db"`. If it says `"fallback"`, the edit was rejected; revert it.
 
 ```js
 use bisaat
@@ -77,7 +77,7 @@ db.settings.updateOne({ _id: "site" }, { $set: { openingAt: "2026-12-20T09:00:00
 db.settings.updateOne({ _id: "site" }, { $set: { bookingUrl: "https://example.com/book", bookingLabel: "Book a table" } })
 ```
 
-If a document fails validation or the database is down, visitors see the bundled seed content instead.
+If a document is invalid or the database is down, visitors see the bundled seed content instead.
 
 ## Deployment
 
