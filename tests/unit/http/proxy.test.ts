@@ -25,11 +25,33 @@ describe("proxy deny rules", () => {
     ["GET", "/admin/x"],
     ["POST", "/admin"],
     ["GET", "/ADMIN"],
+    ["GET", "/Admin/"],
+    ["GET", "/admin/"],
+    ["GET", "//admin"],
+    ["GET", "/%61dmin"],
+    ["GET", "/%2561dmin"],
+    ["GET", "/admin%2f"],
+    ["GET", "/admin;x"],
+    ["GET", "/admin."],
+    ["GET", "/admin%2e"],
+    ["GET", "/x/%2e%2e/admin"],
   ])("%s %s -> 403", async (m, p) => {
     const res = await make()(req(p, m));
     expect(res.status).toBe(403);
     expect(await res.text()).toBe("Forbidden");
     expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+  });
+
+  it("undecodable path -> 400", () => {
+    expect(make()(req("/%E0%A4%A")).status).toBe(400);
+  });
+
+  it("encoded and doubled api path is still treated as api", () => {
+    expect(make()(req("//%61pi/content", "POST")).status).toBe(405);
+  });
+
+  it("OPTIONS /api/content -> 405", () => {
+    expect(make()(req("/api/content", "OPTIONS")).status).toBe(405);
   });
 
   it("/administrator is not denied", () => {
@@ -60,10 +82,17 @@ describe("proxy rate limit", () => {
     expect(isPassThrough(p(req("/api/content", "GET", "2.2.2.2")))).toBe(true);
   });
 
-  it("uses first x-forwarded-for entry", () => {
+  it("keys on the rightmost x-forwarded-for entry", () => {
     const p = make(1);
-    p(req("/api/content", "GET", "3.3.3.3, 9.9.9.9"));
-    expect(p(req("/api/content", "GET", "3.3.3.3, 8.8.8.8")).status).toBe(429);
+    p(req("/api/content", "GET", "9.9.9.9, 3.3.3.3"));
+    expect(p(req("/api/content", "GET", "8.8.8.8, 3.3.3.3")).status).toBe(429);
+  });
+
+  it("rotating leftmost XFF with fixed rightmost still hits 429", () => {
+    const p = make(2);
+    p(req("/api/content", "GET", "1.1.1.1, 7.7.7.7"));
+    p(req("/api/content", "GET", "2.2.2.2, 7.7.7.7"));
+    expect(p(req("/api/content", "GET", "3.3.3.3, 7.7.7.7")).status).toBe(429);
   });
 
   it("never limits pages", () => {

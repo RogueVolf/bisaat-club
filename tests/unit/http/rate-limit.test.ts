@@ -31,4 +31,10 @@ describe("createRateLimiter", () => {
     l.hit("b", 5000);
     expect(l.size()).toBe(1);
   });
+
+  it("caps distinct keys at maxKeys", () => {
+    const l = createRateLimiter({ limit: 1, windowMs: 60_000, maxKeys: 50 });
+    for (let i = 0; i < 500; i++) l.hit(`k${i}`, i);
+    expect(l.size()).toBeLessThanOrEqual(50);
+  });
 });

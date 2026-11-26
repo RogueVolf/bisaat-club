@@ -12,9 +12,38 @@ function withSecurityHeaders<T extends Response>(res: T): T {
   return res;
 }
 
+// The deployment must sit behind exactly one trusted proxy (which appends the real
+// client IP to x-forwarded-for) or be directly exposed. Only the rightmost entry is
+// trusted: everything to its left is client-controlled and spoofable.
 function clientIp(request: NextRequest): string {
-  const fwd = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const parts = request.headers.get("x-forwarded-for")?.split(",") ?? [];
+  const fwd = parts[parts.length - 1]?.trim();
   return fwd || request.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
+/** Canonical form of a request path for deny/route checks. Returns null if undecodable. */
+export function normalizePath(pathname: string): string | null {
+  let p = pathname;
+  try {
+    for (let i = 0; i < 3; i++) {
+      const d = decodeURIComponent(p);
+      if (d === p) break;
+      p = d;
+    }
+  } catch {
+    return null;
+  }
+  const out: string[] = [];
+  for (const raw of p.split("/")) {
+    const seg = raw.replace(/;.*$/, "").replace(/[.\s]+$/, "");
+    if (raw === ".") continue;
+    if (raw === "..") {
+      out.pop();
+      continue;
+    }
+    if (seg !== "") out.push(seg);
+  }
+  return ("/" + out.join("/")).toLowerCase();
 }
 
 function newNonce(): string {
@@ -24,8 +53,10 @@ function newNonce(): string {
 
 export function createProxy({ limiter, isDev }: ProxyDeps) {
   return function handle(request: NextRequest): NextResponse {
-    const { pathname } = request.nextUrl;
-    const lower = pathname.toLowerCase();
+    const lower = normalizePath(request.nextUrl.pathname);
+    if (lower === null) {
+      return withSecurityHeaders(new NextResponse("Bad Request", { status: 400 }));
+    }
     const method = request.method.toUpperCase();
 
     if (lower === "/admin" || lower.startsWith("/admin/")) {
