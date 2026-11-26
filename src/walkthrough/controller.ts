@@ -6,6 +6,8 @@ import { placeHotspots } from "./hotspots";
 import { EYE } from "./math";
 
 type Vec3 = [number, number, number];
+/** The sign on the reception wall needs the full-resolution logo; the header <img> shows a resized copy. */
+const SIGN_LOGO_URL = '/brand/logo.png';
 interface Walk { t0: number; dur: number; x0: number; z0: number; y0: number; p0: number; x1: number; z1: number; dy: number; p1: number; ly: number; lp: number; steps: number }
 
 declare global {
@@ -30,7 +32,7 @@ export function startWalkthrough(root: HTMLElement, content: SiteContent, render
   };
   const view = el('view'), canvas = el<HTMLCanvasElement>('gl'), hint = el('hint');
   const kicker = el('kicker'), title = el('title'), body = el('body'), price = el('price');
-  const brand = el<HTMLImageElement>('brand'), modeBtn = el('mode'), nextBtn = el('next'), nogl = el('nogl');
+  const modeBtn = el('mode'), nextBtn = el('next'), nogl = el('nogl');
   const html = document.documentElement;
 
   /* Zone order comes from `order`, not from the caller's array order */
@@ -50,7 +52,7 @@ export function startWalkthrough(root: HTMLElement, content: SiteContent, render
   function invalidate() { dirty = true; kick(); }
 
   /* ---------- WebGL setup ---------- */
-  const ok = renderer.init(canvas, { logoUrl: brand.src, onNeedsRender: invalidate });
+  const ok = renderer.init(canvas, { logoUrl: SIGN_LOGO_URL, onNeedsRender: invalidate });
   if (!ok) { nogl.style.display = 'flex'; hint.style.display = 'none'; }
 
   /* ---------- Light and dark mode ---------- */
