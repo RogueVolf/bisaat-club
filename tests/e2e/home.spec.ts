@@ -43,7 +43,7 @@ test("without WebGL the fallback shows and the sheet still has text", async ({ p
   await page.goto("/");
   await expect(page.locator("#nogl")).toBeVisible();
   await expect(page.locator("#title")).toHaveText("Play. Read. Stay.");
-  await expect(page.locator("#body")).not.toBeEmpty();
+  await expect(page.locator("#body")).toContainText("free library on one floor");
   await expect(page.locator("#hint")).toBeHidden();
 });
 
