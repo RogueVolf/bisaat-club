@@ -12,9 +12,11 @@ function withSecurityHeaders<T extends Response>(res: T): T {
   return res;
 }
 
-// The deployment must sit behind exactly one trusted proxy (which appends the real
-// client IP to x-forwarded-for) or be directly exposed. Only the rightmost entry is
-// trusted: everything to its left is client-controlled and spoofable.
+// The app must run behind exactly one trusted reverse proxy or platform edge that overwrites or
+// appends x-forwarded-for with the real client IP (and sets x-forwarded-proto). Only the rightmost
+// entry is trusted; everything to its left is client-controlled. Do not expose the app directly:
+// Next only fills x-forwarded-for with `??=`, so a directly connected client could set the
+// rightmost entry itself and bypass the limit.
 function clientIp(request: NextRequest): string {
   const parts = request.headers.get("x-forwarded-for")?.split(",") ?? [];
   const fwd = parts[parts.length - 1]?.trim();

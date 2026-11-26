@@ -88,7 +88,7 @@ Restrict who can reach MongoDB in addition to credentials.
 In-memory, fixed one-minute window, applied to `/api/*` only (page routes are not limited). Limit is `RATE_LIMIT_PER_MINUTE` (default 60); over-limit requests get 429 with `Retry-After`. At most 10,000 keys are tracked; the oldest are evicted first.
 
 Limitations:
-- The client key is the rightmost `x-forwarded-for` entry, falling back to `x-real-ip`. The app must sit behind exactly one trusted reverse proxy that appends the real client IP, or be directly exposed. Behind two or more proxies the key becomes a proxy address, so all clients share one bucket. Never expose the app directly while also trusting a proxy header: a directly connected client can set `x-forwarded-for` itself.
+- The client key is the rightmost `x-forwarded-for` entry, falling back to `x-real-ip`. The app must run behind exactly one trusted reverse proxy or platform edge that overwrites or appends `X-Forwarded-For` and sets `X-Forwarded-Proto`. Behind two or more proxies the key becomes a proxy address, so all clients share one bucket. Never expose the app directly: Next only fills `x-forwarded-for` with `??=`, so a directly connected client can set the rightmost entry itself and bypass the limit. Without `X-Forwarded-Proto`, `upgrade-insecure-requests` is dropped from the CSP (HSTS still applies).
 - Each process keeps its own counters, so with N instances the effective limit is N times higher and resets on restart. For strict limits enforce them at the edge (CDN, WAF or proxy).
 
 ### Headers and CSP
@@ -98,9 +98,10 @@ Sent on every proxied response (`src/server/http/security-headers.ts`):
 - `Content-Security-Policy` with a fresh nonce per request: `default-src 'self'`; `script-src 'self' 'nonce-<n>' 'strict-dynamic'`; `style-src 'self' 'unsafe-inline'`; `img-src 'self' data: blob:`; `font-src 'self'`; `connect-src 'self'`; `frame-ancestors 'none'`; `base-uri 'self'`; `form-action 'self'`; `object-src 'none'`; `upgrade-insecure-requests` (production, and only when the request arrived over HTTPS, directly or per `x-forwarded-proto`: Safari would otherwise upgrade `http://localhost` and LAN asset URLs and break local testing on an iPhone). Development adds `'unsafe-eval'` and `ws:`. `style-src 'unsafe-inline'` is kept because the ported markup uses inline styles; scripts are nonce-only. Fonts are self-hosted via `next/font`, so no external hosts are allowed.
 - `Strict-Transport-Security: max-age=63072000; includeSubDomains`. No `preload` yet: that is hard to undo and waits on the owner's final domain decision.
 - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+- The proxy skips static assets (`/_next/static`, `/brand/*`, icons), so `next.config.ts` sets the same five static headers (not the CSP) for every path.
 
 ## Secrets
 
 - `.env` is git-ignored; `.env.example` lists names only. See the README for the table.
 - Use a secret manager or host-level env configuration in production. Rotate the DB passwords if they were ever shared.
-- `SITE_URL` is not secret but must be set in production (metadata and structured data). The app logs one warning, once per process, only when `NODE_ENV=production` and `SITE_URL` is unset, empty or invalid, and then uses localhost.
+- `SITE_URL` is not secret but must be set in production (metadata and structured data). When `SITE_URL` is unset, empty or invalid, the app uses the request origin (`x-forwarded-proto`/`x-forwarded-host`, or `host`, validated strictly as a hostname with optional port) and falls back to localhost only if that is also unusable. It logs one warning per process, only when `NODE_ENV=production`.

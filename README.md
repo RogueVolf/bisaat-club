@@ -6,7 +6,7 @@ One Next.js 16 app (App Router) serves the site and a read-only content API from
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 20.19+
 - Docker (local MongoDB 8.2)
 
 ## Setup
@@ -51,7 +51,7 @@ The users are only created on a fresh Docker volume. For an existing volume, see
 | `npm run lint` / `npm run typecheck` | ESLint and TypeScript |
 | `npm test` | Unit tests plus the Docker-backed integration test (needs MongoDB running and `MONGODB_URI_TEST`) |
 | `npm run test:e2e` | Playwright smoke tests: the main suite (builds and serves on port 3200; WebKit iPhone 13 and iPhone SE, plus a 390x844 Chromium sanity project), then the database-down fallback suite (`playwright.fallback.config.ts`, port 3201, same build, MongoDB unreachable) |
-| `npm run compare` | Screenshots the reference page and the app (serve it on port 3200 first, or pass a URL or `SITE_URL`) for all six zones, light and dark, with mismatch percentages in `test-results/compare/`. Add `--webkit` for Safari. Fails if the canvas region (room pixels, hotspot pills excluded) differs by more than 0.5%, the sheet by more than 1.0%, or hotspot boxes differ by more than 2 px |
+| `npm run compare` | Screenshots the reference page and the app (serve it on port 3200 first, or pass a URL or set `E2E_BASE_URL`; `SITE_URL` is deliberately ignored so a production value can never be targeted) for all six zones, light and dark, with mismatch percentages in `test-results/compare/`. Add `--webkit` for Safari. Fails if the canvas region (room pixels, hotspot pills excluded) differs by more than 0.5%, the header (`#count` masked) or sheet by more than 1.0%, or hotspot boxes differ by more than 2 px |
 | `npm run measure:iphone` | Frame-time and load measurements for iPhone-class devices |
 | `npm run seed` | Seed MongoDB (see below) |
 
@@ -81,7 +81,7 @@ If a document is invalid or the database is down, visitors see the bundled seed 
 
 ## Deployment
 
-Any host that runs Node.js 20+:
+Any host that runs Node.js 20.19+:
 
 ```bash
 npm run build && npm start      # listens on PORT (default 3000)
@@ -92,7 +92,9 @@ Checklist:
 - Set all runtime env vars (`MONGODB_URI_READ`, `MONGODB_DB`, `SITE_URL`, optionally `RATE_LIMIT_PER_MINUTE`). The write URI is only needed where you run the seed.
 - MongoDB must use TLS in production (`mongodb+srv://` or `tls=true`); the app refuses weakened TLS, except for loopback hosts.
 - Use separate read-only and read-write users, and restrict network access (Atlas IP access list or private endpoint; firewall and private bind address if self-hosted).
-- Put the app behind exactly one trusted reverse proxy that sets `x-forwarded-for`, or expose it directly. The rate limit is per process.
+- Run the app behind exactly one trusted reverse proxy or platform edge that overwrites or appends `X-Forwarded-For` and sets `X-Forwarded-Proto`. Do not expose the app directly: the rightmost `X-Forwarded-For` entry is the rate-limit key, and a directly connected client can set it, so the limit could be bypassed. Without `X-Forwarded-Proto`, `upgrade-insecure-requests` is dropped from the CSP (HSTS still applies). The rate limit is per process.
+- Build with the runtime env present (`MONGODB_*`, `SITE_URL`): `/opengraph-image` is prerendered at build time and reads content from the database.
+- Ship `assets/` and `public/` alongside `.next`: the Open Graph image route reads files from `process.cwd()` at runtime.
 - Serve over HTTPS; the app sends HSTS and a nonce-based CSP.
 
 Details are in `docs/security.md`.
