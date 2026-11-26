@@ -1,6 +1,7 @@
 import type { SiteContent } from "@/content/schema";
 import { Header } from "./Header";
 import { Sheet } from "./Sheet";
+import Walkthrough from "./Walkthrough";
 
 export function Stage({ content }: { content: SiteContent }) {
   const zones = [...content.zones].sort((a, b) => a.order - b.order);
@@ -22,7 +23,7 @@ export function Stage({ content }: { content: SiteContent }) {
         <div id="hint">Drag to look around. Tap a spot to walk there.</div>
       </div>
       <Sheet zone={first} settings={content.settings} />
-      {/* Task 7: insert <Walkthrough content={content} /> here, at the end of #stage. */}
+      <Walkthrough content={content} />
     </div>
   );
 }
