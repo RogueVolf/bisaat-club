@@ -15,19 +15,21 @@ const dmSans = DM_Sans({
 const DESCRIPTION =
   "PS5, sim racing, board games and a free library on one floor in Frazer Town, Bangalore. Open 9 AM to 11 PM. One rule: no laptops.";
 
-export const metadata: Metadata = {
-  metadataBase: siteUrl(),
-  title: "Bisaat Club — Walk the floor",
-  description: DESCRIPTION,
-  openGraph: {
-    type: "website",
-    siteName: "Bisaat Club",
-    locale: "en_IN",
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    metadataBase: await siteUrl(),
     title: "Bisaat Club — Walk the floor",
     description: DESCRIPTION,
-  },
-  twitter: { card: "summary_large_image" },
-};
+    openGraph: {
+      type: "website",
+      siteName: "Bisaat Club",
+      locale: "en_IN",
+      title: "Bisaat Club — Walk the floor",
+      description: DESCRIPTION,
+    },
+    twitter: { card: "summary_large_image" },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
