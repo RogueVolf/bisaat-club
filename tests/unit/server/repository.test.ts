@@ -90,6 +90,14 @@ describe("assertTlsPolicy", () => {
     expect(() => assertTlsPolicy("mongodb+srv://h/db?tls=false", "production")).toThrow();
     expect(() => assertTlsPolicy("mongodb+srv://h/db?tlsInsecure=true", "production")).toThrow();
   });
+  it("allows loopback-only hosts without TLS in production", () => {
+    expect(() => assertTlsPolicy("mongodb://u:p@127.0.0.1:27017/bisaat", "production")).not.toThrow();
+    expect(() => assertTlsPolicy("mongodb://localhost/db", "production")).not.toThrow();
+    expect(() => assertTlsPolicy("mongodb://[::1]:27017/db", "production")).not.toThrow();
+    expect(() => assertTlsPolicy("mongodb://127.0.0.1,db.example.com/db", "production")).toThrow();
+    expect(() => assertTlsPolicy("mongodb://127.0.0.1.evil.com/db", "production")).toThrow();
+    expect(() => assertTlsPolicy("mongodb://localhost.example.com/db", "production")).toThrow();
+  });
   it("does not leak the URI", () => {
     const uri = "mongodb://user:pw@h/db";
     let message = "";

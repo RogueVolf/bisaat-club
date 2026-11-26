@@ -28,7 +28,7 @@ describe("GET /api/content", () => {
     expect(SiteContentSchema.safeParse(body.content).success).toBe(true);
   });
 
-  it.each(["?$where=1", "?a.b=1", "?x=1"])("rejects %s with 400", async (qs) => {
+  it.each(["?$where=1", "?a.b=1", "?x=1", "?__proto__=x"])("rejects %s with 400", async (qs) => {
     const res = await GET(req(qs));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "invalid_query" });

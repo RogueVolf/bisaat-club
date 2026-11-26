@@ -9,7 +9,7 @@ function error(status: number, code: string): Response {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const query: Record<string, string> = {};
+  const query: Record<string, string> = Object.create(null);
   for (const [k, v] of new URL(request.url).searchParams) query[k] = v;
   // Operator-style keys and any parameter at all are rejected before the data layer.
   if (hasUnsafeKeys(query) || Object.keys(query).length > 0) {
