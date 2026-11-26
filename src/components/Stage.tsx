@@ -13,7 +13,7 @@ export function Stage({ content }: { content: SiteContent }) {
         <canvas id="gl" aria-label="A first-person view inside the Bisaat Club room. Drag to look around."></canvas>
         <div id="nogl">This view needs WebGL, which this browser has switched off. Everything you need is below.</div>
         {zones
-          .filter((z) => z.spotLabel)
+          .filter((z) => z.spotLabel && z.at)
           .map((z) => (
             <button className="spot" data-go={z.id} key={z.id}>
               <i></i>

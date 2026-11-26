@@ -25,6 +25,11 @@ describe("page shell", () => {
     const labels = [...html().matchAll(/<button class="spot" data-go="[^"]+"><i><\/i><span>([^<]+)<\/span>/g)].map((m) => m[1]);
     expect(labels).toEqual(["PS5 corner", "Sim rigs", "Board games", "Reading room", "Reception"]);
   });
+  it("leaves out a spot whose zone has a label but no position in the room", () => {
+    const zones = SEED.zones.map((z) => (z.id === "race" ? { ...z, at: null } : z));
+    const ids = [...html({ ...SEED, zones }).matchAll(/<button class="spot" data-go="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toEqual(["ps5", "games", "lib", "desk"]);
+  });
   it("booking link is data driven", () => {
     const h = html({ ...SEED, settings: { ...SEED.settings, bookingUrl: "/book", bookingLabel: "Book now" } });
     const book = tag(h, "book");

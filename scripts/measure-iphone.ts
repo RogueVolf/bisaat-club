@@ -14,6 +14,7 @@
  *     backing was reallocated (which clears it) without a draw following; "held black %" is the share of
  *     pure-black pixels in #view while a press is held still (a blank canvas is pure black);
  *   - whether the document scrolls, console errors and CSP violations;
+ *   - a WebGL context lose/restore (WEBGL_lose_context): is the room drawn again afterwards;
  *   - homepage transfer bytes (encoded body + headers) split into document, JS, CSS, font and image.
  *
  * --capture dir: at rest, saves the canvas pixels (read back right after the draw) and full-page
@@ -152,7 +153,20 @@ interface Row {
   walk: { dur: number; median: number; p95: number; low: number; full: number };
   drag: { dur: number; median: number; p95: number; low: number; full: number };
   idle: { raf: number; draws: number }; tap: { blank: number; resizes: number; draws: number }; heldBlack: number;
-  scroll: boolean; errors: string[]; bytes: Record<string, number>;
+  scroll: boolean; errors: string[]; bytes: Record<string, number>; restore: string;
+}
+
+/** Loses and restores the WebGL context (as iOS does in the background) and checks the room is drawn again. */
+async function contextRestore(page: Page): Promise<string> {
+  const ok = await page.evaluate(`(async () => {
+    const ext = document.getElementById('gl').getContext('webgl').getExtension('WEBGL_lose_context');
+    if (!ext) return 'no ext';
+    ext.loseContext(); await new Promise((r) => setTimeout(r, 300));
+    const n = window.__m.ev.length; ext.restoreContext(); await new Promise((r) => setTimeout(r, 600));
+    return window.__m.ev.slice(n).some((e) => e.k === 'draw') ? 'drawn' : 'not drawn';
+  })()`) as string;
+  if (ok !== "drawn") return ok;
+  return `drawn, ${await blackPercent(await page.locator("#gl").screenshot())}% black`;
 }
 
 function kindOf(url: string, type: string): string {
@@ -191,10 +205,11 @@ async function measureDevice(browser: Browser, name: string): Promise<Row> {
   await page.evaluate(`(${PRESS})(false)`); await sleep(400);
   const drag = await page.evaluate(`(${MEASURE})('drag')`) as Row["walk"];
   const walk = await page.evaluate(`(${MEASURE})('walk')`) as Row["walk"];
+  const restore = await contextRestore(page);
   const csp = await page.evaluate("window.__m.csp") as string[];
   await ctx.close();
   const v = desc.viewport as { width: number; height: number };
-  return { device: name, vp: `${v.width}x${v.height}@${desc.deviceScaleFactor}`, firstFrame: ff.t, afterDcl: ff.dcl, ffSource: ff.src, walk, drag, idle, tap, heldBlack, scroll, errors: [...errors, ...csp.map((c) => "csp: " + c)], bytes };
+  return { device: name, vp: `${v.width}x${v.height}@${desc.deviceScaleFactor}`, firstFrame: ff.t, afterDcl: ff.dcl, ffSource: ff.src, walk, drag, idle, tap, heldBlack, scroll, restore, errors: [...errors, ...csp.map((c) => "csp: " + c)], bytes };
 }
 
 const CAPTURES: { name: string; path: string; vp: { width: number; height: number }; dpr: number; mobile: boolean; scheme: "light" | "dark" }[] = [
@@ -271,9 +286,9 @@ const kb = (n: number) => (n / 1024).toFixed(1);
   const rows: Row[] = [];
   for (const name of DEVICES) { rows.push(await measureDevice(browser, name)); console.error(`measured ${name}`); }
   await browser.close();
-  console.log("\n| Device | Viewport | First frame ms (after DCL) | Walk median / p95 ms | Walk draws low/full | Drag median / p95 ms | Drag draws low/full | Idle rAF/s, draws/s | Tap blank ms | Held-press black % | Doc scrolls | Errors |");
-  console.log("|---|---|---|---|---|---|---|---|---|---|---|---|");
-  for (const r of rows) console.log(`| ${r.device} | ${r.vp} | ${r.firstFrame} (${r.afterDcl}) | ${r.walk.median} / ${r.walk.p95} | ${r.walk.low}/${r.walk.full} | ${r.drag.median} / ${r.drag.p95} | ${r.drag.low}/${r.drag.full} | ${r.idle.raf}, ${r.idle.draws} | ${r.tap.blank} | ${r.heldBlack} | ${r.scroll ? "YES" : "no"} | ${r.errors.length} |`);
+  console.log("\n| Device | Viewport | First frame ms (after DCL) | Walk median / p95 ms | Walk draws low/full | Drag median / p95 ms | Drag draws low/full | Idle rAF/s, draws/s | Tap blank ms | Held-press black % | Doc scrolls | GL lose/restore | Errors |");
+  console.log("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  for (const r of rows) console.log(`| ${r.device} | ${r.vp} | ${r.firstFrame} (${r.afterDcl}) | ${r.walk.median} / ${r.walk.p95} | ${r.walk.low}/${r.walk.full} | ${r.drag.median} / ${r.drag.p95} | ${r.drag.low}/${r.drag.full} | ${r.idle.raf}, ${r.idle.draws} | ${r.tap.blank} | ${r.heldBlack} | ${r.scroll ? "YES" : "no"} | ${r.restore} | ${r.errors.length} |`);
   console.log("\n| Device | Doc KB | JS KB | CSS KB | Font KB | Image KB | Other KB | Total KB |");
   console.log("|---|---|---|---|---|---|---|---|");
   for (const r of rows) console.log(`| ${r.device} | ${kb(r.bytes.doc)} | ${kb(r.bytes.js)} | ${kb(r.bytes.css)} | ${kb(r.bytes.font)} | ${kb(r.bytes.img)} | ${kb(r.bytes.other)} | ${kb(r.bytes.total)} |`);
