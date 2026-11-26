@@ -50,6 +50,12 @@ html[data-mode="day"] #moon,html[data-mode="night"] #sun{display:none}
   #hint{bottom:28px}
 }
 
+/* iOS touch behaviour (not in the reference; no visible change on desktop): no rubber-band bounce,
+   no grey flash on tap, no callout or text selection on a long press in the room */
+html,body{overscroll-behavior:none}
+.spot,#mode,#next,#book,#find{-webkit-tap-highlight-color:transparent}
+#view{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+
 /* 404 page */
 #lost{min-height:100dvh;display:flex;flex-direction:column;background:var(--ink)}
 #lostcard{margin:auto 0 0;padding:28px max(20px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));background:var(--sheet);color:var(--text);border-radius:22px 22px 0 0}
