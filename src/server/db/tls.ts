@@ -1,3 +1,5 @@
+import { TlsPolicyError } from "@/server/errors";
+
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /** True only for a plain mongodb:// URI whose every host is loopback (ports optional). */
@@ -29,6 +31,6 @@ export function assertTlsPolicy(uri: string, nodeEnv: string): void {
   const secure =
     uri.startsWith("mongodb+srv://") || params.get("tls") === "true" || params.get("ssl") === "true";
   if (weakened || !secure) {
-    throw new Error("MongoDB connection must use TLS with certificate checks in production");
+    throw new TlsPolicyError();
   }
 }

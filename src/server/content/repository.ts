@@ -4,6 +4,7 @@ import { SEED } from "@/content/seed";
 import { SiteContentSchema, type SiteContent } from "@/content/schema";
 import { assertSafeKeys } from "@/content/safe-keys";
 import { getReadDb } from "@/server/db/client";
+import { describeFallback } from "./describe-error";
 import { COLLECTIONS } from "@/server/db/validators";
 
 function stripId<T extends { _id?: unknown }>(doc: T): Omit<T, "_id"> {
@@ -43,8 +44,7 @@ async function load(): Promise<Result> {
   try {
     return { content: await loadSiteContentFromDb(), source: "db" };
   } catch (e) {
-    const name = e instanceof Error ? e.name : "UnknownError";
-    console.warn(`content: falling back to bundled seed (${name})`);
+    console.warn(`content: falling back to bundled seed (${describeFallback(e)})`);
     return { content: SEED, source: "fallback" };
   }
 }

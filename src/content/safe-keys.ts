@@ -1,7 +1,10 @@
 export class UnsafeInputError extends Error {
-  constructor(message = "Input contains unsafe keys") {
+  /** Dotted location of the first unsafe key (key names only, never values). */
+  readonly path: string;
+  constructor(message = "Input contains unsafe keys", path = "") {
     super(message);
     this.name = "UnsafeInputError";
+    this.path = path;
   }
 }
 
@@ -22,6 +25,23 @@ export function hasUnsafeKeys(value: unknown): boolean {
   return false;
 }
 
+function findUnsafePath(value: unknown, path: string[]): string[] | null {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const r = findUnsafePath(value[i], [...path, String(i)]);
+      if (r) return r;
+    }
+  } else if (isPlainObject(value)) {
+    for (const [k, v] of Object.entries(value)) {
+      if (k.startsWith("$") || k.includes(".")) return [...path, k];
+      const r = findUnsafePath(v, [...path, k]);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
 export function assertSafeKeys(value: unknown): void {
-  if (hasUnsafeKeys(value)) throw new UnsafeInputError();
+  const p = findUnsafePath(value, []);
+  if (p) throw new UnsafeInputError(undefined, p.join("/"));
 }

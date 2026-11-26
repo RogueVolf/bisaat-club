@@ -1,5 +1,6 @@
 import "server-only";
 import { MongoClient, type Db } from "mongodb";
+import { ConfigError } from "@/server/errors";
 import { assertTlsPolicy } from "./tls";
 
 export { assertTlsPolicy };
@@ -14,7 +15,7 @@ function connect(role: Role): Promise<MongoClient> {
   const existing = cache[role];
   if (existing) return existing;
   const uri = process.env[ENV[role]];
-  if (!uri) throw new Error(`Missing environment variable ${ENV[role]}`);
+  if (!uri) throw new ConfigError(`${ENV[role]} is not set`);
   assertTlsPolicy(uri, process.env.NODE_ENV ?? "development");
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 2000 });
   const p = client.connect().catch(async (e: unknown) => {
@@ -28,7 +29,7 @@ function connect(role: Role): Promise<MongoClient> {
 
 function dbName(): string {
   const name = process.env.MONGODB_DB;
-  if (!name) throw new Error("Missing environment variable MONGODB_DB");
+  if (!name) throw new ConfigError("MONGODB_DB is not set");
   return name;
 }
 
