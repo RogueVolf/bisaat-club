@@ -12,7 +12,7 @@ export const revalidate = 60;
 
 const [font, logo] = await Promise.all([
   readFile(join(process.cwd(), "assets/fonts/DMSans-Bold.ttf")),
-  readFile(join(process.cwd(), "public/brand/logo.png")),
+  readFile(join(process.cwd(), "public/brand/og-logo.png")),
 ]);
 const logoSrc = `data:image/png;base64,${logo.toString("base64")}`;
 
@@ -36,7 +36,7 @@ export default async function Image() {
           fontWeight: 700,
         }}
       >
-        <img src={logoSrc} width={560} height={140} alt="" />
+        <img src={logoSrc} width={640} height={203} alt="" />
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ fontSize: 44, color: "#E3A33B" }}>{opens}</div>
           <div style={{ fontSize: 104, color: "#F3EBDD", letterSpacing: -3, marginTop: 8 }}>Play. Read. Stay.</div>
