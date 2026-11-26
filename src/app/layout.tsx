@@ -10,8 +10,21 @@ const dmSans = DM_Sans({
   display: "swap",
 });
 
+const DESCRIPTION =
+  "PS5, sim racing, board games and a free library on one floor in Frazer Town, Bangalore. Open 9 AM to 11 PM. One rule: no laptops.";
+
 export const metadata: Metadata = {
-  title: "Bisaat Club",
+  metadataBase: new URL(process.env.SITE_URL ?? "http://localhost:3000"),
+  title: "Bisaat Club — Walk the floor",
+  description: DESCRIPTION,
+  openGraph: {
+    type: "website",
+    siteName: "Bisaat Club",
+    locale: "en_IN",
+    title: "Bisaat Club — Walk the floor",
+    description: DESCRIPTION,
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {
@@ -24,9 +37,8 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Reading request headers opts the tree into dynamic rendering, which is what lets
   // Next apply the per-request CSP nonce (set by src/proxy.ts) to its own scripts.
-  // Task 8 passes this nonce to the JSON-LD <script>.
-  const nonce = (await headers()).get("x-nonce") ?? undefined;
-  void nonce;
+  // The page reads the same nonce for its JSON-LD <script>.
+  await headers();
   return (
     <html lang="en" data-mode="day" className={dmSans.variable} suppressHydrationWarning>
       <body>{children}</body>
