@@ -6,7 +6,13 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 };
 
-export function buildCsp(nonce: string, isDev: boolean): string {
+export interface CspOptions {
+  isDev: boolean;
+  /** true when the request reached us over HTTPS (directly or via the proxy's x-forwarded-proto) */
+  https: boolean;
+}
+
+export function buildCsp(nonce: string, { isDev, https }: CspOptions): string {
   const directives = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
@@ -19,6 +25,8 @@ export function buildCsp(nonce: string, isDev: boolean): string {
     "form-action 'self'",
     "object-src 'none'",
   ];
-  if (!isDev) directives.push("upgrade-insecure-requests");
+  // Only over HTTPS: Safari also applies it to http://localhost and LAN addresses, rewriting every
+  // asset to https://, which leaves a dead page when testing a production build on an iPhone over Wi-Fi.
+  if (!isDev && https) directives.push("upgrade-insecure-requests");
   return directives.join("; ");
 }

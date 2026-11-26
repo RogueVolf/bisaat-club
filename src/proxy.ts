@@ -46,6 +46,13 @@ export function normalizePath(pathname: string): string | null {
   return ("/" + out.join("/")).toLowerCase();
 }
 
+/** Over HTTPS, either directly or behind a TLS-terminating proxy. A spoofed header can only add a stricter directive. */
+function arrivedOverHttps(request: NextRequest): boolean {
+  if (request.nextUrl.protocol === "https:") return true;
+  const proto = request.headers.get("x-forwarded-proto") ?? "";
+  return proto.split(",").some((p) => p.trim().toLowerCase() === "https");
+}
+
 function newNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return btoa(String.fromCharCode(...bytes));
@@ -90,7 +97,7 @@ export function createProxy({ limiter, isDev }: ProxyDeps) {
     }
 
     const nonce = newNonce();
-    const csp = buildCsp(nonce, isDev);
+    const csp = buildCsp(nonce, { isDev, https: arrivedOverHttps(request) });
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set("x-nonce", nonce);
     requestHeaders.set("Content-Security-Policy", csp);

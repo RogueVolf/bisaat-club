@@ -10,10 +10,10 @@ function make(limit = 60) {
     isDev: false,
   });
 }
-function req(path: string, method = "GET", ip?: string) {
-  return new NextRequest(`http://localhost:3000${path}`, {
+function req(path: string, method = "GET", ip?: string, origin = "http://localhost:3000", extra: Record<string, string> = {}) {
+  return new NextRequest(`${origin}${path}`, {
     method,
-    headers: ip ? { "x-forwarded-for": ip } : {},
+    headers: { ...(ip ? { "x-forwarded-for": ip } : {}), ...extra },
   });
 }
 const isPassThrough = (r: Response) =>
@@ -126,6 +126,16 @@ describe("proxy headers", () => {
     expect(res.headers.get("x-middleware-request-content-security-policy")).toBe(csp);
   });
 
+  it("sends upgrade-insecure-requests only when the request arrived over HTTPS", () => {
+    const csp = (r: NextRequest) => make()(r).headers.get("Content-Security-Policy")!;
+    expect(csp(req("/"))).not.toContain("upgrade-insecure-requests");
+    expect(csp(req("/", "GET", undefined, "http://192.168.1.20:3000"))).not.toContain("upgrade-insecure-requests");
+    expect(csp(req("/", "GET", undefined, "https://bisaat.club"))).toContain("upgrade-insecure-requests");
+    expect(csp(req("/", "GET", undefined, "http://localhost:3000", { "x-forwarded-proto": "https" }))).toContain("upgrade-insecure-requests");
+    expect(csp(req("/", "GET", undefined, "http://localhost:3000", { "x-forwarded-proto": "https,http" }))).toContain("upgrade-insecure-requests");
+    expect(csp(req("/", "GET", undefined, "http://localhost:3000", { "x-forwarded-proto": "http" }))).not.toContain("upgrade-insecure-requests");
+  });
+
   it("nonce differs per request", () => {
     const p = make();
     expect(p(req("/")).headers.get("x-middleware-request-x-nonce")).not.toBe(
@@ -135,14 +145,20 @@ describe("proxy headers", () => {
 });
 
 describe("buildCsp", () => {
-  it("prod", () => {
-    const c = buildCsp("N", false);
+  it("prod over HTTPS", () => {
+    const c = buildCsp("N", { isDev: false, https: true });
     expect(c).toBe(
       "default-src 'self'; script-src 'self' 'nonce-N' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests",
     );
   });
+  it("prod over plain HTTP (localhost, LAN) leaves out upgrade-insecure-requests", () => {
+    // Safari applies it even to http://localhost and LAN addresses, rewriting every asset to https.
+    expect(buildCsp("N", { isDev: false, https: false })).toBe(
+      "default-src 'self'; script-src 'self' 'nonce-N' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    );
+  });
   it("dev", () => {
-    const c = buildCsp("N", true);
+    const c = buildCsp("N", { isDev: true, https: true });
     expect(c).toContain("'unsafe-eval'");
     expect(c).toContain("connect-src 'self' ws:");
     expect(c).not.toContain("upgrade-insecure-requests");
