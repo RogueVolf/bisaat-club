@@ -18,13 +18,7 @@ export async function seedDatabase(db: Db, opts: { ifEmpty: boolean }): Promise<
     const options = { validator: VALIDATORS[key], ...VALIDATION_OPTIONS };
     if (existing.has(name)) {
       if (opts.ifEmpty && (await db.collection(name).countDocuments({}, { limit: 1 })) > 0) continue;
-      try {
-        await db.command({ collMod: name, ...options });
-      } catch (e) {
-        // readWrite users lack the collMod privilege; keep the validator set at creation.
-        if ((e as { code?: number }).code !== 13) throw e;
-        console.warn(`seed: could not update validator on ${name} (collMod not permitted)`);
-      }
+      await db.command({ collMod: name, ...options });
     } else {
       await db.createCollection(name, options);
     }

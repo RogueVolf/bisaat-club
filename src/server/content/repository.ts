@@ -22,6 +22,7 @@ export async function loadSiteContentFromDb(): Promise<SiteContent> {
     db.collection(COLLECTIONS.prices).find({}).toArray(),
   ]);
   if (settings.length !== 1) throw new Error("settings document missing");
+  if (zones.length === 0 || prices.length === 0) throw new Error("content collections empty");
   const raw = {
     settings: stripId(settings[0]),
     zones: zones.map(stripId),

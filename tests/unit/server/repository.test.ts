@@ -8,11 +8,11 @@ vi.mock("@/server/db/client", () => ({ getReadDb: () => getReadDb() }));
 import { getSiteContent } from "@/server/content/repository";
 import { assertTlsPolicy } from "@/server/db/tls";
 
-function fakeDb(zones: unknown[]) {
+function fakeDb(zones: unknown[], pricesOverride?: unknown[]) {
   const data: Record<string, unknown[]> = {
     settings: [{ _id: "site", ...SEED.settings }],
     zones,
-    prices: SEED.prices.map((p) => ({ _id: p.id, ...p })),
+    prices: pricesOverride ?? SEED.prices.map((p) => ({ _id: p.id, ...p })),
   };
   return {
     collection: (name: string) => ({ find: () => ({ toArray: async () => data[name] }) }),
@@ -50,6 +50,16 @@ describe("getSiteContent", () => {
     expect(r.content).toEqual(SEED);
   });
 
+  it("falls back when zones are empty", async () => {
+    getReadDb.mockResolvedValue(fakeDb([]));
+    expect((await getSiteContent()).source).toBe("fallback");
+  });
+
+  it("falls back when prices are empty", async () => {
+    getReadDb.mockResolvedValue(fakeDb(seedZones(), []));
+    expect((await getSiteContent()).source).toBe("fallback");
+  });
+
   it("returns DB content when valid", async () => {
     const zones = seedZones();
     zones[1] = { ...zones[1], title: "Changed title" } as (typeof zones)[number];
@@ -69,11 +79,30 @@ describe("assertTlsPolicy", () => {
     expect(() => assertTlsPolicy("mongodb+srv://h/db", "production")).not.toThrow();
     expect(() => assertTlsPolicy("mongodb://h/db", "development")).not.toThrow();
   });
-  it("does not leak the URI", () => {
-    try {
-      assertTlsPolicy("mongodb://user:pw@h/db", "production");
-    } catch (e) {
-      expect((e as Error).message).not.toContain("pw");
+  it("rejects weakened TLS in production", () => {
+    for (const q of [
+      "tls=false", "ssl=false", "TLS=FALSE", "tls=true&tlsInsecure=true",
+      "tls=true&tlsAllowInvalidCertificates=true", "tls=true&tlsAllowInvalidHostnames=true",
+      "tlsinsecure=true",
+    ]) {
+      expect(() => assertTlsPolicy(`mongodb://h/db?${q}`, "production"), q).toThrow();
     }
+    expect(() => assertTlsPolicy("mongodb+srv://h/db?tls=false", "production")).toThrow();
+    expect(() => assertTlsPolicy("mongodb+srv://h/db?tlsInsecure=true", "production")).toThrow();
+  });
+  it("does not leak the URI", () => {
+    const uri = "mongodb://user:pw@h/db";
+    let message = "";
+    expect(() => {
+      try {
+        assertTlsPolicy(uri, "production");
+      } catch (e) {
+        message = (e as Error).message;
+        throw e;
+      }
+    }).toThrow();
+    expect(message).not.toBe("");
+    expect(message).not.toContain(uri);
+    expect(message).not.toContain("pw");
   });
 });

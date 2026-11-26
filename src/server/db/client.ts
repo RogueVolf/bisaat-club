@@ -16,12 +16,12 @@ function connect(role: Role): Promise<MongoClient> {
   const uri = process.env[ENV[role]];
   if (!uri) throw new Error(`Missing environment variable ${ENV[role]}`);
   assertTlsPolicy(uri, process.env.NODE_ENV ?? "development");
-  const p = new MongoClient(uri, { serverSelectionTimeoutMS: 2000 })
-    .connect()
-    .catch((e: unknown) => {
-      delete cache[role];
-      throw e;
-    });
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 2000 });
+  const p = client.connect().catch(async (e: unknown) => {
+    delete cache[role];
+    await client.close().catch(() => {});
+    throw e;
+  });
   cache[role] = p;
   return p;
 }
