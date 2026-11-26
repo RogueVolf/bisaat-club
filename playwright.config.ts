@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = 3200;
-const baseURL = process.env.SITE_URL ?? `http://localhost:${PORT}`;
+// Deliberately not SITE_URL: a shell with a production SITE_URL must never point the tests at production.
+const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 
 export default defineConfig({
   testDir: "tests/e2e",

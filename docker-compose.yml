@@ -5,10 +5,10 @@ services:
     ports:
       - "127.0.0.1:27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-      MONGO_APP_RO_PASSWORD: ${MONGO_APP_RO_PASSWORD}
-      MONGO_APP_RW_PASSWORD: ${MONGO_APP_RW_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?set in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set in .env}
+      MONGO_APP_RO_PASSWORD: ${MONGO_APP_RO_PASSWORD:?set in .env}
+      MONGO_APP_RW_PASSWORD: ${MONGO_APP_RW_PASSWORD:?set in .env}
     volumes:
       - mongo-data:/data/db
       - ./docker/mongo-init:/docker-entrypoint-initdb.d:ro

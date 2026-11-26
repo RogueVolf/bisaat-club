@@ -2,8 +2,9 @@
  * Screenshots the reference page and the running app for every zone in
  * day and night, diffs them pixel by pixel and writes the results to
  * test-results/compare/. Usage: tsx scripts/compare-reference.ts [url] [--webkit]
- * The app URL comes from the first non-flag argument, then SITE_URL, then
- * http://localhost:3200. Hotspot boxes must agree within 2 px; sheet mismatch is limited to 1.0%. Exits 1 if any canvas-region mismatch exceeds 0.5%.
+ * The app URL comes from the first non-flag argument, then E2E_BASE_URL (never SITE_URL, which
+ * may point at production), then http://localhost:3200. Hotspot boxes must agree within 2 px; header
+ * (#count masked) and sheet mismatch are each limited to 1.0%. Exits 1 if any canvas-region mismatch exceeds 0.5%.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -13,17 +14,18 @@ import sharp from "sharp";
 
 const args = process.argv.slice(2);
 const useWebkit = args.includes("--webkit");
-const appUrl = (args.find((a) => !a.startsWith("--")) ?? process.env.SITE_URL ?? "http://localhost:3200").replace(/\/$/, "");
+const appUrl = (args.find((a) => !a.startsWith("--")) ?? process.env.E2E_BASE_URL ?? "http://localhost:3200").replace(/\/$/, "");
 const refUrl = pathToFileURL(resolve("bisaat-club-walk-the-floor.html")).href;
 const OUT = resolve("test-results/compare");
 const ZONES = ["door", "ps5", "race", "games", "lib", "desk"];
 const THRESHOLD = 8;
 const CANVAS_LIMIT = 0.5;
 const SHEET_LIMIT = 1.0;
+const HEADER_LIMIT = 1.0;
 const VIEWPORT = { width: 390, height: 844 };
 
 type Region = { x: number; y: number; w: number; h: number };
-type Row = { zone: string; mode: string; total: number; canvas: number; sheet: number; pills: number; spots: string; settle: string; error?: string };
+type Row = { zone: string; mode: string; total: number; canvas: number; header: number; sheet: number; pills: number; spots: string; settle: string; error?: string };
 
 type Spot = { go: string; x: number; y: number; w: number; h: number };
 
@@ -60,7 +62,7 @@ async function shoot(page: Page, url: string, file: string) {
       return { go: (e as HTMLElement).dataset.go ?? "", x: r.x, y: r.y, w: r.width, h: r.height };
     }),
   );
-  return { view: await box("#view"), sheet: await box("#sheet"), spots, settleMs, settled };
+  return { view: await box("#view"), header: await box("#top"), sheet: await box("#sheet"), spots, settleMs, settled };
 }
 
 /** Same visible spots on both sides, each box within 2 px. Returns a problem description or "". */
@@ -90,7 +92,7 @@ async function main() {
     for (const mode of ["day", "night"]) {
       const hash = mode === "night" ? `#${zone}-night` : `#${zone}`;
       const base = `${zone}-${mode}`;
-      const row: Row = { zone, mode, total: 0, canvas: 0, sheet: 0, pills: 0, spots: "", settle: "" };
+      const row: Row = { zone, mode, total: 0, canvas: 0, header: 0, sheet: 0, pills: 0, spots: "", settle: "" };
       try {
         const shots: Record<string, Awaited<ReturnType<typeof shoot>>> = {};
         for (const [label, url] of [["ref", refUrl], ["app", appUrl + "/"]] as const) {
@@ -109,12 +111,13 @@ async function main() {
         // from the reference (the spec allows this). Their geometry is gated by the spots check, so the
         // union of both pages' pill boxes, inflated by 2 px, is left out of the canvas metric and reported as a warning.
         const pills = [...shots.ref.spots, ...shots.app.spots].map((q) => ({ x: Math.floor(q.x) - 2, y: Math.floor(q.y) - 2, w: Math.ceil(q.w) + 4, h: Math.ceil(q.h) + 4 }));
-        let bad = 0, badCanvas = 0, badSheet = 0, nCanvas = 0, nSheet = 0, badPill = 0, nPill = 0;
+        let bad = 0, badCanvas = 0, badSheet = 0, badHeader = 0, nCanvas = 0, nSheet = 0, nHeader = 0, badPill = 0, nPill = 0;
         for (let y = 0; y < a.h; y++) {
           for (let x = 0; x < a.w; x++) {
             const i = (y * a.w + x) * 4;
             const pill = pills.some((r) => inRegion(r, x, y));
-            const c = inRegion(ref.view, x, y) && !pill, s = inRegion(ref.sheet, x, y);
+            const c = inRegion(ref.view, x, y) && !pill, s = inRegion(ref.sheet, x, y), hd = inRegion(ref.header, x, y);
+            if (hd) nHeader++;
             if (c) nCanvas++;
             if (s) nSheet++;
             const p = pill && inRegion(ref.view, x, y);
@@ -126,6 +129,7 @@ async function main() {
               if (c) badCanvas++;
               if (p) badPill++;
               if (s) badSheet++;
+              if (hd) badHeader++;
               diff[i] = 255; diff[i + 1] = 0; diff[i + 2] = 0; diff[i + 3] = 255;
             } else {
               const g = Math.round((a.data[i] + a.data[i + 1] + a.data[i + 2]) / 3 * 0.3 + 178);
@@ -138,12 +142,13 @@ async function main() {
         row.settle = `${shots.ref.settleMs}/${shots.app.settleMs}ms${shots.ref.settled && shots.app.settled ? "" : " NOT SETTLED"}`;
         row.total = pct(bad, a.w * a.h);
         row.canvas = pct(badCanvas, nCanvas);
+        row.header = pct(badHeader, nHeader);
         row.sheet = pct(badSheet, nSheet);
         row.pills = pct(badPill, nPill);
       } catch (e) {
         row.error = (e as Error).message;
         row.spots = "error";
-        row.total = row.canvas = row.sheet = 100;
+        row.total = row.canvas = row.header = row.sheet = 100;
       }
       rows.push(row);
     }
@@ -153,9 +158,9 @@ async function main() {
   const f = (n: number) => n.toFixed(2) + "%";
   const lines = [
     `Reference vs ${appUrl} (${useWebkit ? "webkit" : "chromium"}, ${VIEWPORT.width}x${VIEWPORT.height}, channel tolerance ${THRESHOLD})`,
-    "zone   | mode  | total   | canvas  | sheet   | pills (warn) | spots | settle ref/app",
-    "-------|-------|---------|---------|---------|--------------|-------|---------------",
-    ...rows.map((r) => `${r.zone.padEnd(6)} | ${r.mode.padEnd(5)} | ${f(r.total).padStart(7)} | ${f(r.canvas).padStart(7)} | ${f(r.sheet).padStart(7)} | ${f(r.pills).padStart(12)} | ${(r.spots ? "FAIL" : "ok").padEnd(5)} | ${r.settle}${r.spots ? "  " + r.spots : ""}${r.error ? "  ERROR " + r.error : ""}`),
+    "zone   | mode  | total   | canvas  | header  | sheet   | pills (warn) | spots | settle ref/app",
+    "-------|-------|---------|---------|---------|---------|--------------|-------|---------------",
+    ...rows.map((r) => `${r.zone.padEnd(6)} | ${r.mode.padEnd(5)} | ${f(r.total).padStart(7)} | ${f(r.canvas).padStart(7)} | ${f(r.header).padStart(7)} | ${f(r.sheet).padStart(7)} | ${f(r.pills).padStart(12)} | ${(r.spots ? "FAIL" : "ok").padEnd(5)} | ${r.settle}${r.spots ? "  " + r.spots : ""}${r.error ? "  ERROR " + r.error : ""}`),
   ];
   console.log(lines.join("\n"));
 
@@ -163,16 +168,16 @@ async function main() {
   const html = `<!doctype html><meta charset="utf-8"><title>Reference comparison</title>
 <style>body{font:14px system-ui;margin:24px}td,th{padding:4px 10px;text-align:left}img{width:260px;border:1px solid #ccc}</style>
 <h1>Reference vs app</h1><p>${lines[0]}</p>
-<table><tr><th>Zone</th><th>Mode</th><th>Total</th><th>Canvas</th><th>Sheet</th><th>Pills (warn)</th><th>Spots</th><th>Settle</th><th>Reference</th><th>App</th><th>Diff</th></tr>
-${rows.map((r) => `<tr><td>${r.zone}</td><td>${r.mode}</td>${cell(r.total)}${cell(r.canvas)}${cell(r.sheet, SHEET_LIMIT)}<td>${f(r.pills)}</td><td>${r.spots || "ok"}</td><td>${r.settle}</td>` +
+<table><tr><th>Zone</th><th>Mode</th><th>Total</th><th>Canvas</th><th>Header</th><th>Sheet</th><th>Pills (warn)</th><th>Spots</th><th>Settle</th><th>Reference</th><th>App</th><th>Diff</th></tr>
+${rows.map((r) => `<tr><td>${r.zone}</td><td>${r.mode}</td>${cell(r.total)}${cell(r.canvas)}${cell(r.header, HEADER_LIMIT)}${cell(r.sheet, SHEET_LIMIT)}<td>${f(r.pills)}</td><td>${r.spots || "ok"}</td><td>${r.settle}</td>` +
     ["ref", "app", "diff"].map((k) => `<td><img src="${r.zone}-${r.mode}-${k}.png"></td>`).join("") + "</tr>").join("\n")}
 </table>`;
   writeFileSync(`${OUT}/index.html`, html);
   console.log(`\nWrote ${OUT}/index.html`);
 
-  const failed = rows.filter((r) => r.canvas > CANVAS_LIMIT || r.sheet > SHEET_LIMIT || r.spots);
+  const failed = rows.filter((r) => r.canvas > CANVAS_LIMIT || r.header > HEADER_LIMIT || r.sheet > SHEET_LIMIT || r.spots);
   if (failed.length) {
-    console.error(`FAIL (canvas > ${CANVAS_LIMIT}%, sheet > ${SHEET_LIMIT}% or hotspot mismatch): ${failed.map((r) => r.zone + "-" + r.mode).join(", ")}`);
+    console.error(`FAIL (canvas > ${CANVAS_LIMIT}%, header > ${HEADER_LIMIT}%, sheet > ${SHEET_LIMIT}% or hotspot mismatch): ${failed.map((r) => r.zone + "-" + r.mode).join(", ")}`);
     process.exit(1);
   }
 }
