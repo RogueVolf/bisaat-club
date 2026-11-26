@@ -63,6 +63,13 @@ describe("SEED", () => {
     expect(s.mapsUrl).toBe(REF_MAPS);
   });
 
+  it("price item names", () => {
+    expect(SEED.prices.map((x) => x.item)).toEqual([
+      "PS5 couch station, up to 4 players", "PS5 sim rig", "Xbox sim rig",
+      "Chill-zone pass", "Student Hour", "Library",
+    ]);
+  });
+
   it("prices", () => {
     const p = Object.fromEntries(SEED.prices.map((x) => [x.id, x]));
     expect(p["ps5-couch"]).toMatchObject({ item: "PS5 couch station, up to 4 players", weekdayRate: 300, weekendRate: 500, unit: "hour" });
@@ -79,7 +86,7 @@ describe("rejects", () => {
     expect(ZoneSchema.safeParse({ ...SEED.zones[0], extra: 1 }).success).toBe(false);
   });
   it("javascript: and http bookingUrl", () => {
-    for (const bookingUrl of ["javascript:alert(1)", "http://x", "//evil.com"]) {
+    for (const bookingUrl of ["javascript:alert(1)", "http://x", "//evil.com", "/\\evil.com"]) {
       expect(SettingsSchema.safeParse({ ...SEED.settings, bookingUrl }).success).toBe(false);
     }
   });

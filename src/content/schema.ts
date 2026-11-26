@@ -10,7 +10,7 @@ const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const httpsUrl = z.url({ protocol: /^https$/ });
 const bookingUrl = z.union([
   httpsUrl,
-  z.string().regex(/^\/(?!\/)\S*$/, "must be an https URL or a site path"),
+  z.string().regex(/^\/(?![\/\\])\S*$/, "must be an https URL or a site path"),
 ]);
 
 export const SettingsSchema = z

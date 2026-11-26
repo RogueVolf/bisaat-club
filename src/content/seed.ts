@@ -74,8 +74,8 @@ export const SEED: SiteContent = {
     { id: "ps5-couch", item: "PS5 couch station, up to 4 players", weekdayRate: 300, weekendRate: 500, unit: "hour", note: "", order: 0 },
     { id: "ps5-sim", item: "PS5 sim rig", weekdayRate: 500, weekendRate: 650, unit: "hour", note: "", order: 1 },
     { id: "xbox-sim", item: "Xbox sim rig", weekdayRate: 400, weekendRate: 550, unit: "hour", note: "", order: 2 },
-    { id: "chill-pass", item: "Chill zone pass", weekdayRate: 500, weekendRate: 500, unit: "30 days", note: "Free for anyone who books gaming", order: 3 },
-    { id: "student-hour", item: "Student hour", weekdayRate: null, weekendRate: null, unit: "session", note: "30% off, weekdays 11 AM to 4 PM", order: 4 },
+    { id: "chill-pass", item: "Chill-zone pass", weekdayRate: 500, weekendRate: 500, unit: "30 days", note: "Free for anyone who books gaming", order: 3 },
+    { id: "student-hour", item: "Student Hour", weekdayRate: null, weekendRate: null, unit: "session", note: "30% off, weekdays 11 AM to 4 PM", order: 4 },
     { id: "library", item: "Library", weekdayRate: null, weekendRate: null, unit: "free", note: "Always free; 500+ books, run by Safar-e-Siyahi (safaresiyahi.in)", order: 5 },
   ],
 };
