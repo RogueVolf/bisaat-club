@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 import { headers } from "next/headers";
 import { siteUrl } from "@/server/site-url";
+import { MODE_BOOT_SCRIPT } from "@/walkthrough/deep-link";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -39,9 +40,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Reading request headers opts the tree into dynamic rendering, which is what lets
   // Next apply the per-request CSP nonce (set by src/proxy.ts) to its own scripts.
   // The page reads the same nonce for its JSON-LD <script>.
-  await headers();
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" data-mode="day" className={dmSans.variable} suppressHydrationWarning>
+      <head>
+        {/* Sets data-mode before first paint (dark scheme or #...-night), so the sheet never fades from cream */}
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: MODE_BOOT_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

@@ -3,6 +3,7 @@
  *
  *   npm run measure:iphone -- [url] [--json out.json] [--capture dir] [--strip-uir]
  *   npm run measure:iphone -- --diff beforeDir afterDir
+ *   npm run measure:iphone -- [url] --modes-only      (just the dark-mode first-paint table)
  *
  * The URL comes from the first argument, then SITE_URL, then http://localhost:3100. Run it against
  * `npm run build && npm start -p 3100`. Per device (portrait and landscape) it prints:
@@ -15,6 +16,8 @@
  *     pure-black pixels in #view while a press is held still (a blank canvas is pure black);
  *   - whether the document scrolls, console errors and CSP violations;
  *   - a WebGL context lose/restore (WEBGL_lose_context): is the room drawn again afterwards;
+ *   - dark mode before first paint: for dark scheme and #...-night links, the sheet colour of the first frame,
+ *     when it settles, and the sheet pixel of a screenshot taken right at DOMContentLoaded;
  *   - homepage transfer bytes (encoded body + headers) split into document, JS, CSS, font and image.
  *
  * --capture dir: at rest, saves the canvas pixels (read back right after the draw) and full-page
@@ -62,6 +65,47 @@ const INIT = `
 `;
 
 const STRIP_UIR = flag("--strip-uir");
+
+/** Logs #sheet's background colour on every frame from the very first one, to see what was painted first and when it settled. */
+const SHEET_LOG = `
+  window.__sheet = [];
+  const poll = () => { const s = document.getElementById('sheet');
+    if (s) { const c = getComputedStyle(s).backgroundColor, l = window.__sheet; if (!l.length || l[l.length - 1].c !== c) l.push({ t: Math.round(performance.now()), c }); }
+    if (performance.now() < 4000) requestAnimationFrame(poll); };
+  requestAnimationFrame(poll);
+`;
+const MODE_CASES: { name: string; path: string; scheme: "light" | "dark"; want: "night" | "day" }[] = [
+  { name: "dark scheme, /", path: "/", scheme: "dark", want: "night" },
+  { name: "light scheme, /#lib-night", path: "/#lib-night", scheme: "light", want: "night" },
+  { name: "dark scheme, /#lib-day", path: "/#lib-day", scheme: "dark", want: "day" },
+  { name: "light scheme, /", path: "/", scheme: "light", want: "day" },
+];
+const SHEET_RGB = { night: "rgb(31, 42, 68)", day: "rgb(243, 235, 221)" };
+
+/** First painted sheet colour, settle time (last colour change), an early screenshot's sheet pixel, CSP violations. */
+async function modeCheck(browser: Browser) {
+  const out: string[] = [];
+  const { defaultBrowserType: _b, ...desc } = devices["iPhone 15 Pro"]; void _b;
+  for (const c of MODE_CASES) {
+    const ctx = await newContext(browser, desc, { colorScheme: c.scheme });
+    await ctx.addInitScript({ content: SHEET_LOG });
+    const page = await ctx.newPage();
+    await page.goto(BASE + c.path, { waitUntil: "domcontentloaded" });
+    const shot = await page.screenshot();
+    await sleep(3000);
+    const log = await page.evaluate("window.__sheet") as { t: number; c: string }[];
+    const csp = await page.evaluate("window.__m.csp") as string[];
+    const mode = await page.evaluate("document.documentElement.dataset.mode") as string;
+    const { data, info } = await sharp(shot).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const at = ((info.height - 40) * info.width + Math.round(info.width / 2)) * info.channels; // inside the sheet, near the bottom
+    const early = `rgb(${data[at]}, ${data[at + 1]}, ${data[at + 2]})`;
+    const first = log[0]?.c ?? "none", settled = log[log.length - 1];
+    const ok = first === SHEET_RGB[c.want] && settled?.c === SHEET_RGB[c.want] && mode === c.want && csp.length === 0;
+    out.push(`| ${c.name} | ${c.want} | ${first} | ${log.length > 1 ? settled.t : log[0]?.t ?? "-"} | ${log.length - 1} | ${early} | ${csp.length} | ${ok ? "ok" : "FAIL"} |`);
+    await ctx.close();
+  }
+  return out;
+}
 
 async function newContext(browser: Browser, desc: Record<string, unknown>, extra: Record<string, unknown> = {}): Promise<BrowserContext> {
   const ctx = await browser.newContext({ ...desc, colorScheme: "light", ...extra });
@@ -283,8 +327,10 @@ const kb = (n: number) => (n / 1024).toFixed(1);
   const cap = opt("--capture");
   if (cap) { await capture(browser, cap); await browser.close(); return; }
   const doc = await documentBytes();
+  if (flag("--modes-only")) { const m = await modeCheck(browser); await browser.close(); m.forEach((l) => console.log(l)); return; }
   const rows: Row[] = [];
   for (const name of DEVICES) { rows.push(await measureDevice(browser, name)); console.error(`measured ${name}`); }
+  const modes = await modeCheck(browser);
   await browser.close();
   console.log("\n| Device | Viewport | First frame ms (after DCL) | Walk median / p95 ms | Walk draws low/full | Drag median / p95 ms | Drag draws low/full | Idle rAF/s, draws/s | Tap blank ms | Held-press black % | Doc scrolls | GL lose/restore | Errors |");
   console.log("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
@@ -292,6 +338,10 @@ const kb = (n: number) => (n / 1024).toFixed(1);
   console.log("\n| Device | Doc KB | JS KB | CSS KB | Font KB | Image KB | Other KB | Total KB |");
   console.log("|---|---|---|---|---|---|---|---|");
   for (const r of rows) console.log(`| ${r.device} | ${kb(r.bytes.doc)} | ${kb(r.bytes.js)} | ${kb(r.bytes.css)} | ${kb(r.bytes.font)} | ${kb(r.bytes.img)} | ${kb(r.bytes.other)} | ${kb(r.bytes.total)} |`);
+  console.log("\nDark mode before first paint (iPhone 15 Pro). Settle = ms from navigation start to the sheet's final colour (the first frame's time when it never changes).");
+  console.log("| Case | Want | First painted sheet | Settle ms | Colour changes | Early screenshot sheet | CSP violations | Result |");
+  console.log("|---|---|---|---|---|---|---|---|");
+  for (const m of modes) console.log(m);
   console.log(`\nhomepage HTML fetched directly: ${kb(doc.bytes)} KB body (${doc.encoding})`);
   console.log(`first-frame source: ${[...new Set(rows.map((r) => r.ffSource))].join(", ")} (app = window.__bisaatFirstFrame, hook = first drawArrays)`);
   for (const r of rows) if (r.errors.length) console.log(`${r.device} errors: ${r.errors.join(" ; ")}`);
