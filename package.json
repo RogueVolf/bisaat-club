@@ -9,7 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test && playwright test -c playwright.fallback.config.ts",
     "compare": "tsx scripts/compare-reference.ts",
     "seed": "tsx scripts/seed.ts",
     "measure:iphone": "tsx scripts/measure-iphone.ts"
