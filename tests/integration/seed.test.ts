@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { SEED } from "../../src/content/seed";
 import { MongoClient } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedDatabase } from "../../scripts/seed";
@@ -29,5 +30,34 @@ describe.skipIf(!uri)("seed (integration)", () => {
   it("rejects documents with extra fields (code 121)", async () => {
     const db = client.db(dbName);
     await expect(db.collection("zones").insertOne({ _id: "x", bogus: 1 } as never)).rejects.toMatchObject({ code: 121 });
+  });
+
+  it("rejects bad edits at write time (code 121) and accepts good ones", async () => {
+    const db = client.db(dbName);
+    await seedDatabase(db, { ifEmpty: false });
+    const settings = db.collection("settings");
+    const bad: Record<string, unknown>[] = [
+      { openingAt: "next friday" },
+      { bookingUrl: "javascript:alert(1)" },
+      { bookingUrl: "//evil.com" },
+      { bookingUrl: "/\\evil.com" },
+      { bookingUrl: "/ok\n" },
+      { mapsUrl: "http://maps.example.com" },
+      { whatsapp: "9945205694" },
+      { instagram: "@bisaat" },
+      { bookingLabel: "" },
+      { "hours.opens": "9am" },
+      { "hours.closes": "25:00" },
+    ];
+    for (const set of bad) {
+      await expect(settings.updateOne({ _id: "site" as never }, { $set: set }), JSON.stringify(set)).rejects.toMatchObject({ code: 121 });
+    }
+    await expect(db.collection("zones").updateOne({ _id: "ps5" as never }, { $set: { id: "PS5" } })).rejects.toMatchObject({ code: 121 });
+    await expect(db.collection("prices").updateOne({ _id: SEED.prices[0].id as never }, { $set: { id: "" } })).rejects.toMatchObject({ code: 121 });
+
+    const ok = await db.collection("zones").updateOne({ _id: "ps5" as never }, { $set: { title: "Edited title" } });
+    expect(ok.modifiedCount).toBe(1);
+    await settings.updateOne({ _id: "site" as never }, { $set: { bookingUrl: "https://wa.me/919945205694?text=hi" } });
+    await settings.updateOne({ _id: "site" as never }, { $set: { bookingUrl: "/book" } });
   });
 });
