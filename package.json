@@ -15,7 +15,8 @@
     "test:e2e": "playwright test && playwright test -c playwright.fallback.config.ts",
     "compare": "tsx scripts/compare-reference.ts",
     "seed": "tsx scripts/seed.ts",
-    "measure:iphone": "tsx scripts/measure-iphone.ts"
+    "measure:iphone": "tsx scripts/measure-iphone.ts",
+    "key:generate": "tsx scripts/generate-key.ts"
   },
   "dependencies": {
     "@vercel/functions": "^3.11.4",
