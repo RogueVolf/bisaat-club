@@ -37,7 +37,7 @@ The users are only created on a fresh Docker volume. For an existing volume, see
 | `MONGODB_URI_WRITE` | Read-write connection string (user `bisaat_rw`), used only by `npm run seed` |
 | `MONGODB_DB` | Database name (`bisaat`) |
 | `RATE_LIMIT_PER_MINUTE` | API requests per minute per IP before 429 (default 60) |
-| `SITE_URL` | Public base URL, used for metadata, Open Graph and structured data. On Vercel production it may be left unset: the project's production domain (`VERCEL_PROJECT_PRODUCTION_URL`, set by Vercel) is used. Previews use their own host |
+| `SITE_URL` | Public base URL, used for metadata, Open Graph and structured data. Set it in production to the canonical domain. If unset on Vercel production, the project's production domain (`VERCEL_PROJECT_PRODUCTION_URL`, chosen by Vercel) is used, which may be a host that redirects. Previews use their own host |
 | `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD` | Docker compose: MongoDB root user |
 | `MONGO_APP_RO_PASSWORD`, `MONGO_APP_RW_PASSWORD` | Docker compose: passwords for the two app users |
 | `MONGODB_URI_TEST` | Root URI for the seed integration test (throwaway databases) |
@@ -51,7 +51,7 @@ The users are only created on a fresh Docker volume. For an existing volume, see
 | `npm run lint` / `npm run typecheck` | ESLint and TypeScript |
 | `npm test` | Unit tests plus the Docker-backed integration test (needs MongoDB running and `MONGODB_URI_TEST`) |
 | `npm run test:e2e` | Playwright smoke tests: the main suite (builds and serves on port 3200; WebKit iPhone 13 and iPhone SE, plus a 390x844 Chromium sanity project), then the database-down fallback suite (`playwright.fallback.config.ts`, port 3201, same build, MongoDB unreachable) |
-| `npm run compare` | Screenshots the reference page and the app (serve it on port 3200 first, or pass a URL or set `E2E_BASE_URL`; `SITE_URL` is deliberately ignored so a production value can never be targeted) for all six zones, light and dark, with mismatch percentages in `test-results/compare/`. Add `--webkit` for Safari. Fails if the canvas region (room pixels, hotspot pills excluded) differs by more than 0.5%, the header (`#count` masked) or sheet by more than 1.0%, or hotspot boxes differ by more than 2 px. Chromium's rendering of the reference page varies slightly between loads (text anti-aliasing; the app's shots are byte-identical), so a failing view re-shoots the reference, never the app, up to 3 times and keeps the closest |
+| `npm run compare` | Screenshots the reference page and the app (serve it on port 3200 first, or pass a URL or set `E2E_BASE_URL`; `SITE_URL` is deliberately ignored so a production value can never be targeted) for all six zones, light and dark, with mismatch percentages in `test-results/compare/`. Add `--webkit` for Safari. Fails if the canvas region (room pixels, hotspot pills excluded) differs by more than 0.5%, the header (opening status `#open` masked, since it depends on the date) or sheet by more than 1.0%, or hotspot boxes differ by more than 2 px. Chromium's rendering of the reference page varies slightly between loads (text anti-aliasing; the app's shots are byte-identical), so a failing view re-shoots the reference, never the app, up to 3 times and keeps the closest |
 | `npm run measure:iphone` | Frame-time and load measurements for iPhone-class devices |
 | `npm run seed` | Seed MongoDB (see below) |
 
@@ -61,7 +61,7 @@ First e2e run: `npx playwright install webkit chromium`.
 
 `npm run seed` uses `MONGODB_URI_WRITE`. It creates the `settings`, `zones` and `prices` collections with their `$jsonSchema` validators (or updates the validators with `collMod` on existing collections) and upserts the bundled content from `src/content/seed.ts`. It overwrites documents with the same `_id`, so it resets edits to those documents.
 
-`npm run seed -- --if-empty` skips any collection that already has documents. Use it in deploy scripts so it never clobbers live edits.
+`npm run seed -- --if-empty` never overwrites documents in a collection that already has some. It still updates every validator and fills in settings fields added since the database was first seeded (`openLabel`, `address.postalCode`), only where they are missing. Use it on an existing database (including a Docker volume seeded earlier) after pulling new code, and in deploy scripts.
 
 ## Changing content without a deploy
 
@@ -88,11 +88,11 @@ Vercel builds and runs the app with no extra configuration: `vercel.json` only p
 1. **Atlas.** Create the cluster in AWS Mumbai (`ap-south-1`) so it sits next to the functions. Create two database users scoped to the `bisaat` database: `bisaat_ro` with `read`, and `bisaat_rw` with `readWrite` plus a custom role granting `collMod`, `createCollection` and `createIndex` on `bisaat` (the same roles as `docker/mongo-init/01-users.js`). Use the `mongodb+srv://` strings Atlas gives you; they use TLS, which the app requires in production.
 2. **Network access.** Vercel functions have no fixed outbound IP unless the project buys Vercel Static IPs (Pro or Enterprise, paid add-on). With Static IPs, put only those addresses in the Atlas IP Access List. Without them, Atlas must allow `0.0.0.0/0`, and the protection is the TLS connection, the strong per-user password and the read-only user the site uses. See `docs/security.md`.
 3. **Seed once**, from your machine (add your own IP to the Atlas access list temporarily): `MONGODB_URI_WRITE='<rw srv uri>' MONGODB_DB=bisaat npm run seed -- --if-empty`. The write URI never goes into Vercel.
-4. **Vercel project env vars** (Production and Preview): `MONGODB_URI_READ`, `MONGODB_DB`, optionally `SITE_URL` and `RATE_LIMIT_PER_MINUTE`. Mark the URI as sensitive.
-5. **Domain.** Add it in Vercel; Vercel serves HTTPS and redirects HTTP. Once the domain is final and every subdomain serves HTTPS, submit it at hstspreload.org (the header already carries `preload`, see `docs/security.md`).
+4. **Vercel project env vars**: `MONGODB_URI_READ` and `MONGODB_DB` (Production and Preview), `SITE_URL=https://<domain>` (Production), optionally `RATE_LIMIT_PER_MINUTE`. Mark the URI as sensitive.
+5. **Domain.** Add it in Vercel; Vercel serves HTTPS and redirects HTTP. Make the apex (`<domain>`, not `www`) the primary domain that serves the site, and let `www` redirect to it. The preload list checks the apex's HTTPS response, and only responses from the app carry `includeSubDomains; preload`: a redirect served by Vercel's own domain settings does not. Once the domain is final and every subdomain serves HTTPS, submit the apex at hstspreload.org (see `docs/security.md`).
 6. **Rate limiting.** The in-app limit is per function instance. Add a Vercel Firewall rate-limit rule on `/api/*` for a real limit.
 
-Checks after the first deploy: `curl -sI https://<domain>/ | grep -i strict-transport`, and `curl -s https://<domain>/api/content | grep source` should say `"db"`.
+Checks after the first deploy: `curl -sI https://<domain>/ | grep -i strict-transport` must show `includeSubDomains; preload` (check `https://www.<domain>/` too), and `curl -s https://<domain>/api/content | grep source` should say `"db"`.
 
 ### Other hosts
 
