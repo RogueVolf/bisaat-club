@@ -27,6 +27,38 @@ describe.skipIf(!uri)("seed (integration)", () => {
     expect(await db.collection("zones").countDocuments()).toBe(6);
   });
 
+  it("--if-empty upgrades a database seeded before openLabel and postalCode existed, keeping edits", async () => {
+    const db = client.db(`${dbName}_old`);
+    try {
+      await seedDatabase(db, { ifEmpty: false });
+      // Recreate the pre-openLabel state: old validator (no openLabel, additionalProperties false), old document.
+      const { openLabel: _o, ...oldSettings } = SEED.settings;
+      const { postalCode: _p, ...oldAddress } = SEED.settings.address;
+      const oldDoc = { _id: "site", ...oldSettings, address: oldAddress, hoursText: "Owner edit" };
+      await db.command({ collMod: "settings", validator: {}, validationLevel: "off" });
+      await db.collection("settings").replaceOne({ _id: "site" as never }, oldDoc);
+      await db.collection("zones").updateOne({ _id: "ps5" as never }, { $set: { title: "Owner zone edit" } });
+
+      await seedDatabase(db, { ifEmpty: true });
+
+      const site = await db.collection("settings").findOne({ _id: "site" as never });
+      expect(site?.openLabel).toBe(SEED.settings.openLabel);
+      expect(site?.address.postalCode).toBe(SEED.settings.address.postalCode);
+      expect(site?.hoursText).toBe("Owner edit");
+      expect((await db.collection("zones").findOne({ _id: "ps5" as never }))?.title).toBe("Owner zone edit");
+      // The current validator is in place again: an empty openLabel is rejected.
+      await expect(
+        db.collection("settings").updateOne({ _id: "site" as never }, { $set: { openLabel: "" } }),
+      ).rejects.toMatchObject({ code: 121 });
+      // An owner's own values are never overwritten by the backfill.
+      await db.collection("settings").updateOne({ _id: "site" as never }, { $set: { openLabel: "Open now" } });
+      await seedDatabase(db, { ifEmpty: true });
+      expect((await db.collection("settings").findOne({ _id: "site" as never }))?.openLabel).toBe("Open now");
+    } finally {
+      await db.dropDatabase();
+    }
+  });
+
   it("rejects documents with extra fields (code 121)", async () => {
     const db = client.db(dbName);
     await expect(db.collection("zones").insertOne({ _id: "x", bogus: 1 } as never)).rejects.toMatchObject({ code: 121 });
