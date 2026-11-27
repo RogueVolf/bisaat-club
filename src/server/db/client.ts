@@ -1,4 +1,5 @@
 import "server-only";
+import { attachDatabasePool } from "@vercel/functions";
 import { MongoClient, type Db } from "mongodb";
 import { ConfigError } from "@/server/errors";
 import { assertTlsPolicy } from "./tls";
@@ -17,7 +18,10 @@ function connect(role: Role): Promise<MongoClient> {
   const uri = process.env[ENV[role]];
   if (!uri) throw new ConfigError(`${ENV[role]} is not set`);
   assertTlsPolicy(uri, process.env.NODE_ENV ?? "development");
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 2000 });
+  // maxIdleTimeMS plus attachDatabasePool let Vercel close idle connections before a function instance is
+  // suspended, so connections do not leak against the Atlas limit. attachDatabasePool is a no-op off Vercel.
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 2000, maxIdleTimeMS: 5000, appName: "bisaat-club" });
+  attachDatabasePool(client);
   const p = client.connect().catch(async (e: unknown) => {
     delete cache[role];
     await client.close().catch(() => {});

@@ -144,6 +144,15 @@ describe("proxy headers", () => {
   });
 });
 
+describe("SECURITY_HEADERS", () => {
+  it("HSTS meets the preload list requirements (1 year+, subdomains, preload)", () => {
+    const hsts = SECURITY_HEADERS["Strict-Transport-Security"];
+    expect(Number(/max-age=(\d+)/.exec(hsts)![1])).toBeGreaterThanOrEqual(31536000);
+    expect(hsts).toContain("includeSubDomains");
+    expect(hsts).toContain("preload");
+  });
+});
+
 describe("buildCsp", () => {
   it("prod over HTTPS", () => {
     const c = buildCsp("N", { isDev: false, https: true });

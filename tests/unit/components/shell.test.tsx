@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Stage } from "@/components/Stage";
 import { SEED } from "@/content/seed";
 
@@ -37,12 +37,36 @@ describe("page shell", () => {
     expect(book).toContain("Book now");
   });
   it("renders header and DOM contract", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-27T12:00:00+05:30")); // before opening, whatever today's date is
     const h = html();
+    vi.useRealTimers();
     expect(h).toContain('src="/brand/logo.png"');
     expect(h).toContain("Opens Sat 12 Dec");
     expect(h).toContain('<span id="count"></span>');
     for (const id of ["stage", "top", "brand", "right", "open", "mode", "sun", "moon", "view", "gl", "nogl", "hint", "sheet", "copy", "kicker", "rule", "body", "price", "actions", "next"])
       expect(h).toContain(`id="${id}"`);
     expect(h).toContain('aria-live="polite"');
+  });
+});
+
+describe("header after opening", () => {
+  afterEach(() => vi.useRealTimers());
+  it("shows the countdown before the opening time", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-12-12T08:59:00+05:30"));
+    const open = tag(html(), "open");
+    expect(open).toContain("Opens Sat 12 Dec");
+    expect(open).toContain('id="count"');
+  });
+  it("shows the open label and hours from settings, with no countdown", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-12-12T09:00:00+05:30"));
+    const settings = { ...SEED.settings, openLabel: "Open now", hoursText: "10 AM to 10 PM" };
+    const open = tag(html({ ...SEED, settings }), "open");
+    expect(open).toContain("<b>Open now</b>");
+    expect(open).toContain("10 AM to 10 PM");
+    expect(open).not.toContain("Opens");
+    expect(open).not.toContain('id="count"');
   });
 });

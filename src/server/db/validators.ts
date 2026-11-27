@@ -53,6 +53,7 @@ export const VALIDATORS: Record<keyof typeof COLLECTIONS, object> = {
         },
       },
       hoursText: str,
+      openLabel: nonEmpty,
       address: {
         bsonType: "object",
         required: ["line1", "street", "locality", "city", "region", "country"],
@@ -70,7 +71,7 @@ export const VALIDATORS: Record<keyof typeof COLLECTIONS, object> = {
       mapsUrl: pat(PATTERNS.httpsUrl),
     },
     [
-      "openingAt", "timezone", "hours", "hoursText", "address", "shortAddress",
+      "openingAt", "timezone", "hours", "hoursText", "openLabel", "address", "shortAddress",
       "whatsapp", "instagram", "bookingUrl", "bookingLabel", "mapsUrl",
     ],
   ),

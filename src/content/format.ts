@@ -3,6 +3,11 @@ export function formatCountdown(openingAt: string, now: number): string {
   return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h ${m % 60}m to go`;
 }
 
+/** True from the opening minute onwards. */
+export function isOpen(openingAt: string, now: number): boolean {
+  return now >= Date.parse(openingAt);
+}
+
 export function formatOpensLabel(openingAt: string, tz: string): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: tz,

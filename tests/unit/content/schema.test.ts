@@ -60,6 +60,8 @@ describe("SEED", () => {
     expect(s.hours.days).toHaveLength(7);
     expect(s.hoursText).toBe("9 AM to 11 PM");
     expect(s.shortAddress).toBe("5th Floor, Gold Mani Business Centre");
+    expect(s.address.postalCode).toBe("560005");
+    expect(s.openLabel).toBe("Open today");
     expect(s.mapsUrl).toBe(REF_MAPS);
   });
 

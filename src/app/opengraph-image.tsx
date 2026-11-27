@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
-import { formatOpensLabel } from "@/content/format";
+import { formatOpensLabel, isOpen } from "@/content/format";
 import { SEED } from "@/content/seed";
 import { getSiteContent } from "@/server/content/repository";
 
@@ -20,7 +20,9 @@ export default async function Image() {
   const { settings } = await getSiteContent()
     .then((r) => r.content)
     .catch(() => SEED);
-  const opens = formatOpensLabel(settings.openingAt, settings.timezone);
+  const opens = isOpen(settings.openingAt, Date.now())
+    ? `${settings.openLabel} · ${settings.hoursText}`
+    : formatOpensLabel(settings.openingAt, settings.timezone);
   return new ImageResponse(
     (
       <div

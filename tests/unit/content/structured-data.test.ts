@@ -20,6 +20,7 @@ describe("localBusinessJsonLd", () => {
     expect(ld.address.streetAddress).toContain("Coles Road");
     expect(ld.address.addressLocality).toBe("Bengaluru");
     expect(ld.address.addressCountry).toBe("IN");
+    expect(ld.address.postalCode).toBe("560005");
   });
   it("has opening hours for seven days", () => {
     const spec = ld.openingHoursSpecification;
