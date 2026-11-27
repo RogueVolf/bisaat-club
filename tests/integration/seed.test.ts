@@ -46,6 +46,7 @@ describe.skipIf(!uri)("seed (integration)", () => {
       { whatsapp: "9945205694" },
       { instagram: "@bisaat" },
       { bookingLabel: "" },
+      { openLabel: "" },
       { "hours.opens": "9am" },
       { "hours.closes": "25:00" },
     ];

@@ -54,3 +54,17 @@ test("GET /admin is refused with 403", async ({ request }) => {
 test("POST /api/content is refused with 405", async ({ request }) => {
   expect((await request.post("/api/content", { data: {} })).status()).toBe(405);
 });
+
+test("header switches from the countdown to the open label at the opening time", async ({ page }) => {
+  const { openingAt, openLabel, hoursText } = SEED.settings;
+  // The server renders the pre-opening header (real time is before opening); the browser clock starts two
+  // minutes before opening (so page load cannot cross a minute boundary), then crosses it.
+  await page.clock.install({ time: Date.parse(openingAt) - 120_000 });
+  await page.goto("/");
+  await expect(page.locator("#open b")).toHaveText("Opens Sat 12 Dec");
+  await expect(page.locator("#count")).toHaveText("0d 0h 1m to go");
+  await page.clock.runFor(150_000);
+  await expect(page.locator("#open b")).toHaveText(openLabel);
+  await expect(page.locator("#open span")).toHaveText(hoursText);
+  await expect(page.locator("#count")).toHaveCount(0);
+});

@@ -21,6 +21,8 @@ export const SettingsSchema = z
       .object({ opens: time, closes: time, days: z.array(DayOfWeekSchema).min(1) })
       .strict(),
     hoursText: z.string(),
+    /** Header label once the club has opened (replaces "Opens <date>" and the countdown). */
+    openLabel: z.string().min(1),
     address: z
       .object({
         line1: z.string(),
