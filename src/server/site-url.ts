@@ -33,7 +33,8 @@ async function currentHeaders(): Promise<Headers | null> {
 }
 
 /**
- * Public site origin. SITE_URL when valid, otherwise the request origin (x-forwarded-proto and
+ * Public site origin. SITE_URL when valid, then (on a Vercel production deployment) the project's production
+ * domain, otherwise the request origin (x-forwarded-proto and
  * x-forwarded-host, or host, strictly validated), otherwise localhost.
  */
 export async function siteUrl(): Promise<URL> {
@@ -45,6 +46,9 @@ export async function siteUrl(): Promise<URL> {
       // fall through
     }
   }
+  // Vercel production deployments know their own primary domain; preview deployments keep their own host.
+  const vercelHost = process.env.VERCEL_ENV === "production" ? process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() : "";
+  if (vercelHost && HOST.test(vercelHost)) return new URL(`https://${vercelHost}`);
   const h = await currentHeaders();
   const origin = h ? requestOrigin(h) : null;
   const prod = process.env.NODE_ENV === "production";

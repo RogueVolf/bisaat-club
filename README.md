@@ -1,8 +1,8 @@
 # Bisaat Club
 
-Website for Bisaat Club, a games and reading space in Frazer Town, Bengaluru. The homepage is a phone-first, first-person walk-through of the room (WebGL) with a bottom sheet for each zone, a countdown to opening day, and a booking button. Content (zones, prices, hours, links) is stored in MongoDB and falls back to bundled data if the database is unavailable.
+Website for Bisaat Club, a games and reading space in Frazer Town, Bengaluru. The homepage is a phone-first, first-person walk-through of the room (WebGL) with a bottom sheet for each zone, a countdown to opening day (replaced by an "open" label and the hours once the club opens), and a booking button. Content (zones, prices, hours, links) is stored in MongoDB and falls back to bundled data if the database is unavailable.
 
-One Next.js 16 app (App Router) serves the site and a read-only content API from a single Node server.
+One Next.js 16 app (App Router) serves the site and a read-only content API. Production runs on Vercel with MongoDB Atlas; locally it runs against MongoDB in Docker.
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ The users are only created on a fresh Docker volume. For an existing volume, see
 | `MONGODB_URI_WRITE` | Read-write connection string (user `bisaat_rw`), used only by `npm run seed` |
 | `MONGODB_DB` | Database name (`bisaat`) |
 | `RATE_LIMIT_PER_MINUTE` | API requests per minute per IP before 429 (default 60) |
-| `SITE_URL` | Public base URL, used for metadata, Open Graph and structured data. Set it in production |
+| `SITE_URL` | Public base URL, used for metadata, Open Graph and structured data. On Vercel production it may be left unset: the project's production domain (`VERCEL_PROJECT_PRODUCTION_URL`, set by Vercel) is used. Previews use their own host |
 | `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD` | Docker compose: MongoDB root user |
 | `MONGO_APP_RO_PASSWORD`, `MONGO_APP_RW_PASSWORD` | Docker compose: passwords for the two app users |
 | `MONGODB_URI_TEST` | Root URI for the seed integration test (throwaway databases) |
@@ -51,7 +51,7 @@ The users are only created on a fresh Docker volume. For an existing volume, see
 | `npm run lint` / `npm run typecheck` | ESLint and TypeScript |
 | `npm test` | Unit tests plus the Docker-backed integration test (needs MongoDB running and `MONGODB_URI_TEST`) |
 | `npm run test:e2e` | Playwright smoke tests: the main suite (builds and serves on port 3200; WebKit iPhone 13 and iPhone SE, plus a 390x844 Chromium sanity project), then the database-down fallback suite (`playwright.fallback.config.ts`, port 3201, same build, MongoDB unreachable) |
-| `npm run compare` | Screenshots the reference page and the app (serve it on port 3200 first, or pass a URL or set `E2E_BASE_URL`; `SITE_URL` is deliberately ignored so a production value can never be targeted) for all six zones, light and dark, with mismatch percentages in `test-results/compare/`. Add `--webkit` for Safari. Fails if the canvas region (room pixels, hotspot pills excluded) differs by more than 0.5%, the header (`#count` masked) or sheet by more than 1.0%, or hotspot boxes differ by more than 2 px |
+| `npm run compare` | Screenshots the reference page and the app (serve it on port 3200 first, or pass a URL or set `E2E_BASE_URL`; `SITE_URL` is deliberately ignored so a production value can never be targeted) for all six zones, light and dark, with mismatch percentages in `test-results/compare/`. Add `--webkit` for Safari. Fails if the canvas region (room pixels, hotspot pills excluded) differs by more than 0.5%, the header (`#count` masked) or sheet by more than 1.0%, or hotspot boxes differ by more than 2 px. Chromium's rendering of the reference page varies slightly between loads (text anti-aliasing; the app's shots are byte-identical), so a failing view re-shoots the reference, never the app, up to 3 times and keeps the closest |
 | `npm run measure:iphone` | Frame-time and load measurements for iPhone-class devices |
 | `npm run seed` | Seed MongoDB (see below) |
 
@@ -73,29 +73,35 @@ use bisaat
 db.zones.updateOne({ _id: "ps5" }, { $set: { title: "PlayStation corner" } })
 // Set the opening date (ISO 8601 with offset)
 db.settings.updateOne({ _id: "site" }, { $set: { openingAt: "2026-12-20T09:00:00+05:30" } })
+// Header after opening day: "<openLabel>" above "<hoursText>" (shown from openingAt onwards)
+db.settings.updateOne({ _id: "site" }, { $set: { openLabel: "Open today", hoursText: "9 AM to 11 PM" } })
 // Change the booking button (href and label come from these two fields)
 db.settings.updateOne({ _id: "site" }, { $set: { bookingUrl: "https://example.com/book", bookingLabel: "Book a table" } })
 ```
 
 If a document is invalid or the database is down, visitors see the bundled seed content instead.
 
-## Deployment
+## Deployment (Vercel and MongoDB Atlas)
 
-Any host that runs Node.js 20.19+:
+Vercel builds and runs the app with no extra configuration: `vercel.json` only pins functions to Mumbai (`bom1`), next to the visitors and the database.
 
-```bash
-npm run build && npm start      # listens on PORT (default 3000)
-```
+1. **Atlas.** Create the cluster in AWS Mumbai (`ap-south-1`) so it sits next to the functions. Create two database users scoped to the `bisaat` database: `bisaat_ro` with `read`, and `bisaat_rw` with `readWrite` plus a custom role granting `collMod`, `createCollection` and `createIndex` on `bisaat` (the same roles as `docker/mongo-init/01-users.js`). Use the `mongodb+srv://` strings Atlas gives you; they use TLS, which the app requires in production.
+2. **Network access.** Vercel functions have no fixed outbound IP unless the project buys Vercel Static IPs (Pro or Enterprise, paid add-on). With Static IPs, put only those addresses in the Atlas IP Access List. Without them, Atlas must allow `0.0.0.0/0`, and the protection is the TLS connection, the strong per-user password and the read-only user the site uses. See `docs/security.md`.
+3. **Seed once**, from your machine (add your own IP to the Atlas access list temporarily): `MONGODB_URI_WRITE='<rw srv uri>' MONGODB_DB=bisaat npm run seed -- --if-empty`. The write URI never goes into Vercel.
+4. **Vercel project env vars** (Production and Preview): `MONGODB_URI_READ`, `MONGODB_DB`, optionally `SITE_URL` and `RATE_LIMIT_PER_MINUTE`. Mark the URI as sensitive.
+5. **Domain.** Add it in Vercel; Vercel serves HTTPS and redirects HTTP. Once the domain is final and every subdomain serves HTTPS, submit it at hstspreload.org (the header already carries `preload`, see `docs/security.md`).
+6. **Rate limiting.** The in-app limit is per function instance. Add a Vercel Firewall rate-limit rule on `/api/*` for a real limit.
 
-Checklist:
+Checks after the first deploy: `curl -sI https://<domain>/ | grep -i strict-transport`, and `curl -s https://<domain>/api/content | grep source` should say `"db"`.
 
-- Set all runtime env vars (`MONGODB_URI_READ`, `MONGODB_DB`, `SITE_URL`, optionally `RATE_LIMIT_PER_MINUTE`). The write URI is only needed where you run the seed.
-- MongoDB must use TLS in production (`mongodb+srv://` or `tls=true`); the app refuses weakened TLS, except for loopback hosts.
-- Use separate read-only and read-write users, and restrict network access (Atlas IP access list or private endpoint; firewall and private bind address if self-hosted).
-- Run the app behind exactly one trusted reverse proxy or platform edge that overwrites or appends `X-Forwarded-For` and sets `X-Forwarded-Proto`. Do not expose the app directly: the rightmost `X-Forwarded-For` entry is the rate-limit key, and a directly connected client can set it, so the limit could be bypassed. Without `X-Forwarded-Proto`, `upgrade-insecure-requests` is dropped from the CSP (HSTS still applies). The rate limit is per process.
-- Build with the runtime env present (`MONGODB_*`, `SITE_URL`): `/opengraph-image` is prerendered at build time and reads content from the database.
+### Other hosts
+
+Any host that runs Node.js 20.19+ also works (`npm run build && npm start`, listening on `PORT`, default 3000):
+
+- Set the runtime env vars above, and build with them present: `/opengraph-image` is prerendered at build time and reads content from the database.
+- Run behind exactly one trusted reverse proxy or platform edge that overwrites or appends `X-Forwarded-For` and sets `X-Forwarded-Proto`. Never expose the app directly: the rightmost `X-Forwarded-For` entry is the rate-limit key, and a directly connected client can set it. Without `X-Forwarded-Proto`, `upgrade-insecure-requests` is dropped from the CSP (HSTS still applies).
 - Ship `assets/` and `public/` alongside `.next`: the Open Graph image route reads files from `process.cwd()` at runtime.
-- Serve over HTTPS; the app sends HSTS and a nonce-based CSP.
+- Restrict network access to MongoDB (firewall and private bind address if self-hosted).
 
 Details are in `docs/security.md`.
 
@@ -121,10 +127,6 @@ docs/security.md    protection policies as implemented
 
 ## Open questions for the owner
 
-- **Address.** The visiting card's wording versus "terrace level, Mani Business Centre, 39/1 Coles Road". Which is correct? (The site currently says "5th Floor, Gold Mani Business Centre".)
-- **Logo.** The original vector logo is needed for the header, favicon and Open Graph image.
-- **Hosting and domain.** Where it runs, which domain, and whether MongoDB is Atlas or self-hosted. This decides the network rules (Atlas IP access list versus firewall or private network).
-- **Room accuracy.** Confirm the 36 ft width, the 16 ft left wall and 19 ft right wall, and the estimated furniture positions.
-- **404 copy.** The new 404 page text needs sign-off.
-- **HSTS preload.** Currently off. Decide once the domain is fixed (preload is hard to reverse).
-- **Postal code.** Not yet in the address data.
+- **Room accuracy.** The code-drawn room is an estimate (36 ft wide, 16 ft left wall, 19 ft right wall, furniture from a verbal description). Real 360 degree photos follow after the interior is finished; they replace it through the `RoomRenderer` seam above.
+- **Vector logo.** The brand kit is PNG only (`brand/`). The header still uses the logo extracted from the visiting card; an SVG would sharpen it on high-density screens.
+- **Atlas network access.** Whether to buy Vercel Static IPs (allowlist only those) or allow `0.0.0.0/0` in Atlas.

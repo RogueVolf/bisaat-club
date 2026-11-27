@@ -44,6 +44,29 @@ describe("siteUrl", () => {
     expect((await siteUrl()).origin).toBe("http://club.example:8080");
   });
 
+  it("on a Vercel production deployment uses the project's production domain before the request host", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "bisaat.club");
+    reqHeaders = { host: "bisaat-club-abc123.vercel.app" };
+    expect((await siteUrl()).origin).toBe("https://bisaat.club");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("on a Vercel preview deployment uses the request host, not the production domain", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "bisaat.club");
+    reqHeaders = { host: "bisaat-club-git-x.vercel.app", "x-forwarded-proto": "https" };
+    expect((await siteUrl()).origin).toBe("https://bisaat-club-git-x.vercel.app");
+  });
+
+  it("ignores an invalid VERCEL_PROJECT_PRODUCTION_URL", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "evil.com/path");
+    reqHeaders = { host: "bisaat.club" };
+    expect((await siteUrl()).origin).toBe("http://bisaat.club");
+  });
+
   it("prefers x-forwarded-host and x-forwarded-proto over host", async () => {
     reqHeaders = { host: "internal:3000", "x-forwarded-host": "bisaat.club", "x-forwarded-proto": "https" };
     expect((await siteUrl()).origin).toBe("https://bisaat.club");
