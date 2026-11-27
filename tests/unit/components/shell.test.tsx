@@ -37,7 +37,10 @@ describe("page shell", () => {
     expect(book).toContain("Book now");
   });
   it("renders header and DOM contract", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-27T12:00:00+05:30")); // before opening, whatever today's date is
     const h = html();
+    vi.useRealTimers();
     expect(h).toContain('src="/brand/logo.png"');
     expect(h).toContain("Opens Sat 12 Dec");
     expect(h).toContain('<span id="count"></span>');

@@ -4,7 +4,7 @@
  * test-results/compare/. Usage: tsx scripts/compare-reference.ts [url] [--webkit]
  * The app URL comes from the first non-flag argument, then E2E_BASE_URL (never SITE_URL, which
  * may point at production), then http://localhost:3200. Hotspot boxes must agree within 2 px; header
- * (#count masked) and sheet mismatch are each limited to 1.0%. Exits 1 if any canvas-region mismatch exceeds 0.5%.
+ * (opening status #open masked) and sheet mismatch are each limited to 1.0%. Exits 1 if any canvas-region mismatch exceeds 0.5%.
  * A failing view re-shoots the reference (never the app) up to REF_ATTEMPTS times; see main().
  */
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -41,7 +41,9 @@ async function shoot(page: Page, url: string, file: string) {
   // Web fonts (Google on the reference, next/font on the app) must be in before text is compared.
   await page.waitForFunction(() => document.fonts.status === "loaded" && document.fonts.check('600 13px "DM Sans"') && document.fonts.check('400 16px "DM Sans"'));
   await page.evaluate(() => document.fonts.ready);
-  await page.addStyleTag({ content: "#count{visibility:hidden !important}" });
+  // The opening status depends on the clock: the countdown ticks, and from opening day the app shows the open
+  // label while the reference keeps "Opens Sat 12 Dec". Its states are covered by unit and e2e tests instead.
+  await page.addStyleTag({ content: "#open{visibility:hidden !important}" });
   const t0 = Date.now();
   let prev = await page.screenshot();
   let settled = false;
@@ -167,7 +169,9 @@ async function main() {
           const file = `${OUT}/${base}-ref-${attempt}.png`;
           const ref = await capture("ref", file);
           const m = await measure(file, `${OUT}/${base}-app.png`, ref, app);
-          if (!best || m.total < best.m.total) {
+          // A passing attempt always beats a failing one; among equals the lower total wins.
+          const better = !best || (passes(m) && !passes(best.m)) || (passes(m) === passes(best.m) && m.total < best.m.total);
+          if (better) {
             best = { m, ref, attempt };
             copyFileSync(file, `${OUT}/${base}-ref.png`);
             await sharp(m.diff, { raw: { width: m.w, height: m.h, channels: 4 } }).png().toFile(`${OUT}/${base}-diff.png`);

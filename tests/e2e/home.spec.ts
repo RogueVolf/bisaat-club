@@ -57,13 +57,25 @@ test("POST /api/content is refused with 405", async ({ request }) => {
 
 test("header switches from the countdown to the open label at the opening time", async ({ page }) => {
   const { openingAt, openLabel, hoursText } = SEED.settings;
-  // The server renders the pre-opening header (real time is before opening); the browser clock starts two
-  // minutes before opening (so page load cannot cross a minute boundary), then crosses it.
-  await page.clock.install({ time: Date.parse(openingAt) - 120_000 });
+  // Only the browser clock can be faked; the server uses real time. Once the real opening time has passed
+  // the server already renders the open header, which the next test covers.
+  test.skip(Date.now() >= Date.parse(openingAt), "real time is past opening");
+  // The browser clock starts 90 s before opening, so the countdown reads 1m even if a few seconds pass
+  // during load, then crosses the opening minute.
+  await page.clock.install({ time: Date.parse(openingAt) - 90_000 });
   await page.goto("/");
   await expect(page.locator("#open b")).toHaveText("Opens Sat 12 Dec");
   await expect(page.locator("#count")).toHaveText("0d 0h 1m to go");
-  await page.clock.runFor(150_000);
+  await page.clock.runFor(120_000);
+  await expect(page.locator("#open b")).toHaveText(openLabel);
+  await expect(page.locator("#open span")).toHaveText(hoursText);
+  await expect(page.locator("#count")).toHaveCount(0);
+});
+
+test("header shows the open label and hours, with no countdown, once open", async ({ page }) => {
+  const { openingAt, openLabel, hoursText } = SEED.settings;
+  test.skip(Date.now() < Date.parse(openingAt), "real time is before opening; the previous test covers the switch");
+  await page.goto("/");
   await expect(page.locator("#open b")).toHaveText(openLabel);
   await expect(page.locator("#open span")).toHaveText(hoursText);
   await expect(page.locator("#count")).toHaveCount(0);

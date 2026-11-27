@@ -33,7 +33,18 @@ export function OpeningStatus({ openingAt, opensLabel, openLabel, hoursText, ini
     };
     tick();
     const id = setInterval(tick, 30000);
-    return () => clearInterval(id);
+    // Switch at the opening moment itself, not up to 30 s later, and catch up straight away when a
+    // backgrounded tab (timers throttled or frozen on iOS) becomes visible again.
+    const at = setTimeout(tick, Math.max(0, Math.min(Date.parse(openingAt) - Date.now(), 2 ** 31 - 1)));
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      clearTimeout(at);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [open, openingAt]);
 
   if (open) {
