@@ -5,8 +5,9 @@
  * The app URL comes from the first non-flag argument, then E2E_BASE_URL (never SITE_URL, which
  * may point at production), then http://localhost:3200. Hotspot boxes must agree within 2 px; header
  * (#count masked) and sheet mismatch are each limited to 1.0%. Exits 1 if any canvas-region mismatch exceeds 0.5%.
+ * A failing view re-shoots the reference (never the app) up to REF_ATTEMPTS times; see main().
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, webkit, type Page } from "@playwright/test";
@@ -84,6 +85,61 @@ async function raw(file: string) {
 
 const pct = (bad: number, total: number) => (total ? (bad / total) * 100 : 0);
 
+type Shot = Awaited<ReturnType<typeof shoot>>;
+type Measured = { total: number; canvas: number; header: number; sheet: number; pills: number; spots: string; diff: Buffer; w: number; h: number };
+
+const REF_ATTEMPTS = 3;
+const passes = (m: Measured) => m.canvas <= CANVAS_LIMIT && m.header <= HEADER_LIMIT && m.sheet <= SHEET_LIMIT && !m.spots;
+
+async function measure(refFile: string, appFile: string, ref: Shot, app: Shot): Promise<Measured> {
+  const a = await raw(refFile);
+  const b = await raw(appFile);
+  if (a.w !== b.w || a.h !== b.h) throw new Error(`size mismatch ${a.w}x${a.h} vs ${b.w}x${b.h}`);
+  const diff = Buffer.alloc(a.w * a.h * 4);
+  const inRegion = (r: Region, x: number, y: number) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+  // Pill labels are fractional-x text over the canvas, and their edge and text rasterisation differs
+  // from the reference (the spec allows this). Their geometry is gated by the spots check, so the
+  // union of both pages' pill boxes, inflated by 2 px, is left out of the canvas metric and reported as a warning.
+  const pills = [...ref.spots, ...app.spots].map((q) => ({ x: Math.floor(q.x) - 2, y: Math.floor(q.y) - 2, w: Math.ceil(q.w) + 4, h: Math.ceil(q.h) + 4 }));
+  let bad = 0, badCanvas = 0, badSheet = 0, badHeader = 0, nCanvas = 0, nSheet = 0, nHeader = 0, badPill = 0, nPill = 0;
+  for (let y = 0; y < a.h; y++) {
+    for (let x = 0; x < a.w; x++) {
+      const i = (y * a.w + x) * 4;
+      const pill = pills.some((r) => inRegion(r, x, y));
+      const c = inRegion(ref.view, x, y) && !pill, s = inRegion(ref.sheet, x, y), hd = inRegion(ref.header, x, y);
+      if (hd) nHeader++;
+      if (c) nCanvas++;
+      if (s) nSheet++;
+      const p = pill && inRegion(ref.view, x, y);
+      if (p) nPill++;
+      let mismatch = false;
+      for (let k = 0; k < 4; k++) if (Math.abs(a.data[i + k] - b.data[i + k]) > THRESHOLD) mismatch = true;
+      if (mismatch) {
+        bad++;
+        if (c) badCanvas++;
+        if (p) badPill++;
+        if (s) badSheet++;
+        if (hd) badHeader++;
+        diff[i] = 255; diff[i + 1] = 0; diff[i + 2] = 0; diff[i + 3] = 255;
+      } else {
+        const g = Math.round((a.data[i] + a.data[i + 1] + a.data[i + 2]) / 3 * 0.3 + 178);
+        diff[i] = diff[i + 1] = diff[i + 2] = g; diff[i + 3] = 255;
+      }
+    }
+  }
+  return {
+    total: pct(bad, a.w * a.h),
+    canvas: pct(badCanvas, nCanvas),
+    header: pct(badHeader, nHeader),
+    sheet: pct(badSheet, nSheet),
+    pills: pct(badPill, nPill),
+    spots: spotProblem(ref.spots, app.spots),
+    diff,
+    w: a.w,
+    h: a.h,
+  };
+}
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
   const browser = await (useWebkit ? webkit : chromium).launch();
@@ -94,57 +150,39 @@ async function main() {
       const base = `${zone}-${mode}`;
       const row: Row = { zone, mode, total: 0, canvas: 0, header: 0, sheet: 0, pills: 0, spots: "", settle: "" };
       try {
-        const shots: Record<string, Awaited<ReturnType<typeof shoot>>> = {};
-        for (const [label, url] of [["ref", refUrl], ["app", appUrl + "/"]] as const) {
+        const capture = async (label: "ref" | "app", file: string) => {
           const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, colorScheme: mode === "night" ? "dark" : "light" });
           const page = await ctx.newPage();
-          shots[label] = await shoot(page, url + hash, `${OUT}/${base}-${label}.png`);
+          const shot = await shoot(page, (label === "ref" ? refUrl : appUrl + "/") + hash, file);
           await ctx.close();
-        }
-        const a = await raw(`${OUT}/${base}-ref.png`);
-        const b = await raw(`${OUT}/${base}-app.png`);
-        if (a.w !== b.w || a.h !== b.h) throw new Error(`size mismatch ${a.w}x${a.h} vs ${b.w}x${b.h}`);
-        const diff = Buffer.alloc(a.w * a.h * 4);
-        const inRegion = (r: Region, x: number, y: number) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
-        const ref = shots.ref;
-        // Pill labels are fractional-x text over the canvas, and their edge and text rasterisation differs
-        // from the reference (the spec allows this). Their geometry is gated by the spots check, so the
-        // union of both pages' pill boxes, inflated by 2 px, is left out of the canvas metric and reported as a warning.
-        const pills = [...shots.ref.spots, ...shots.app.spots].map((q) => ({ x: Math.floor(q.x) - 2, y: Math.floor(q.y) - 2, w: Math.ceil(q.w) + 4, h: Math.ceil(q.h) + 4 }));
-        let bad = 0, badCanvas = 0, badSheet = 0, badHeader = 0, nCanvas = 0, nSheet = 0, nHeader = 0, badPill = 0, nPill = 0;
-        for (let y = 0; y < a.h; y++) {
-          for (let x = 0; x < a.w; x++) {
-            const i = (y * a.w + x) * 4;
-            const pill = pills.some((r) => inRegion(r, x, y));
-            const c = inRegion(ref.view, x, y) && !pill, s = inRegion(ref.sheet, x, y), hd = inRegion(ref.header, x, y);
-            if (hd) nHeader++;
-            if (c) nCanvas++;
-            if (s) nSheet++;
-            const p = pill && inRegion(ref.view, x, y);
-            if (p) nPill++;
-            let mismatch = false;
-            for (let k = 0; k < 4; k++) if (Math.abs(a.data[i + k] - b.data[i + k]) > THRESHOLD) mismatch = true;
-            if (mismatch) {
-              bad++;
-              if (c) badCanvas++;
-              if (p) badPill++;
-              if (s) badSheet++;
-              if (hd) badHeader++;
-              diff[i] = 255; diff[i + 1] = 0; diff[i + 2] = 0; diff[i + 3] = 255;
-            } else {
-              const g = Math.round((a.data[i] + a.data[i + 1] + a.data[i + 2]) / 3 * 0.3 + 178);
-              diff[i] = diff[i + 1] = diff[i + 2] = g; diff[i + 3] = 255;
-            }
+          return shot;
+        };
+        // The app is shot once. Chromium's rendering of the reference page varies slightly between loads
+        // (sub-pixel text anti-aliasing in the sheet and header; the app's own shots are byte-identical
+        // run to run, and WebKit is stable), so a failing view re-shoots only the reference, up to
+        // REF_ATTEMPTS times, and keeps the closest. A real app regression still fails against every attempt.
+        const app = await capture("app", `${OUT}/${base}-app.png`);
+        let best: { m: Measured; ref: Shot; attempt: number } | null = null;
+        for (let attempt = 1; attempt <= REF_ATTEMPTS; attempt++) {
+          const file = `${OUT}/${base}-ref-${attempt}.png`;
+          const ref = await capture("ref", file);
+          const m = await measure(file, `${OUT}/${base}-app.png`, ref, app);
+          if (!best || m.total < best.m.total) {
+            best = { m, ref, attempt };
+            copyFileSync(file, `${OUT}/${base}-ref.png`);
+            await sharp(m.diff, { raw: { width: m.w, height: m.h, channels: 4 } }).png().toFile(`${OUT}/${base}-diff.png`);
           }
+          rmSync(file);
+          if (passes(m)) break;
         }
-        await sharp(diff, { raw: { width: a.w, height: a.h, channels: 4 } }).png().toFile(`${OUT}/${base}-diff.png`);
-        row.spots = spotProblem(shots.ref.spots, shots.app.spots);
-        row.settle = `${shots.ref.settleMs}/${shots.app.settleMs}ms${shots.ref.settled && shots.app.settled ? "" : " NOT SETTLED"}`;
-        row.total = pct(bad, a.w * a.h);
-        row.canvas = pct(badCanvas, nCanvas);
-        row.header = pct(badHeader, nHeader);
-        row.sheet = pct(badSheet, nSheet);
-        row.pills = pct(badPill, nPill);
+        const { m, ref } = best!;
+        row.spots = m.spots;
+        row.settle = `${ref.settleMs}/${app.settleMs}ms${ref.settled && app.settled ? "" : " NOT SETTLED"}${best!.attempt > 1 ? ` (ref attempt ${best!.attempt})` : ""}`;
+        row.total = m.total;
+        row.canvas = m.canvas;
+        row.header = m.header;
+        row.sheet = m.sheet;
+        row.pills = m.pills;
       } catch (e) {
         row.error = (e as Error).message;
         row.spots = "error";
