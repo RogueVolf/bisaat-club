@@ -58,9 +58,10 @@ On Atlas, create the custom role and the same two users in Database Access (buil
 
 Restrict who can reach MongoDB in addition to credentials.
 
-**Atlas with Vercel (the planned setup)**
-- Vercel functions use dynamic outbound IPs. To allowlist, buy Vercel Static IPs (Pro or Enterprise, paid add-on) and add only those addresses to the Atlas Project IP Access List. Static IPs do not cover builds by default: a build that cannot reach Atlas prerenders `/opengraph-image` from the bundled content, and it refreshes from the database within 60 s at runtime.
-- Without Static IPs, Atlas has to allow `0.0.0.0/0`. That leaves the database reachable from the internet, protected by TLS, SCRAM authentication with long random passwords, and the site holding only the read-only user. Acceptable while the database holds only public content; revisit before bookings and payments store personal data.
+**Atlas with Vercel (the chosen setup)**
+- Owner decision: no Vercel Static IPs for now, so the Atlas Project IP Access List has `0.0.0.0/0`. Atlas filters by source IP only; Vercel functions connect from changing addresses, and the site's domain says nothing about where those connections come from, so a domain-based restriction is not possible.
+- What protects the database instead: TLS on every connection (enforced by `src/server/db/tls.ts`), SCRAM authentication with long random passwords per user, the site holding only the read-only user, Atlas encryption at rest, and server-side encryption of personal data (below), so even a leaked read credential exposes only ciphertext for those fields.
+- To tighten later: buy Vercel Static IPs (Pro or Enterprise, paid add-on) and replace `0.0.0.0/0` with those addresses. Static IPs do not cover builds by default: a build that cannot reach Atlas prerenders `/opengraph-image` from the bundled content, and it refreshes from the database within 60 s at runtime.
 - Keep the write URI out of Vercel. Seed and edit from a trusted machine whose IP is added to the access list temporarily.
 - The site uses `attachDatabasePool` from `@vercel/functions` with `maxIdleTimeMS: 5000`, so idle connections are closed before a function instance is suspended instead of piling up against the cluster's connection limit. Off Vercel it does nothing.
 
@@ -73,6 +74,16 @@ Restrict who can reach MongoDB in addition to credentials.
 - Bind `mongod` to a private interface (`net.bindIp`), not `0.0.0.0`. The bundled `docker-compose.yml` publishes only on `127.0.0.1`; remove or change that mapping deliberately.
 - Firewall port 27017 so only the app hosts can connect.
 - Enable TLS (`net.tls.mode: requireTLS`, server certificate and CA file) and use a certificate the app hosts trust. Enable authorization (`security.authorization: enabled`).
+
+## Personal data encryption
+
+Atlas encrypts disks and backups by default. On top of that, personal data (bookings, names, phone numbers and payment references, from later phases) is encrypted by the server before it is written and decrypted only on the server: `src/server/crypto/field-encryption.ts`, imported only from server code (`server-only`).
+
+- AES-256-GCM, a random 96-bit IV per value, authenticated: a modified value fails to decrypt instead of returning garbage. Each value is bound to a caller-supplied context such as `bookings.phone:<id>`, so a value copied into another field or record also fails.
+- Key: `DATA_ENCRYPTION_KEY`, 32 random bytes in base64 (`npm run key:generate`), set as a sensitive Vercel env var. It never goes into MongoDB, the client bundle or logs; error messages never contain it. Keep a copy in the owner's password manager: if the key is lost, encrypted data cannot be recovered.
+- Rotation: set the new key as `DATA_ENCRYPTION_KEY` and the old one as `DATA_ENCRYPTION_KEY_PREVIOUS`, re-encrypt existing values (each token records which key made it), then remove the old key.
+- Not encrypted with this key: the public site content (zones, prices, settings). It is public on the website anyway, and the owner edits it directly in Atlas until the admin area exists (owner decision). It is still covered by Atlas's at-rest encryption.
+- Encrypted fields cannot be searched or validated by MongoDB. When a lookup is needed (for example bookings by phone number), store a keyed hash (HMAC) of the normalised value alongside, rather than the plain value.
 
 ## Content integrity
 
@@ -103,7 +114,7 @@ Limitations:
 Sent on every proxied response (`src/server/http/security-headers.ts`):
 
 - `Content-Security-Policy` with a fresh nonce per request: `default-src 'self'`; `script-src 'self' 'nonce-<n>' 'strict-dynamic'`; `style-src 'self' 'unsafe-inline'`; `img-src 'self' data: blob:`; `font-src 'self'`; `connect-src 'self'`; `frame-ancestors 'none'`; `base-uri 'self'`; `form-action 'self'`; `object-src 'none'`; `upgrade-insecure-requests` (production, and only when the request arrived over HTTPS, directly or per `x-forwarded-proto`: Safari would otherwise upgrade `http://localhost` and LAN asset URLs and break local testing on an iPhone). Development adds `'unsafe-eval'` and `ws:`. `style-src 'unsafe-inline'` is kept because the ported markup uses inline styles; scripts are nonce-only. Fonts are self-hosted via `next/font`, so no external hosts are allowed.
-- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` (owner approved preload). The header alone does nothing extra: preloading starts when the domain is submitted at hstspreload.org, after which browsers refuse plain HTTP for the domain and every subdomain, and removal takes months. Submit only once the final domain is live and every subdomain serves HTTPS. The apex must be the host that serves the app: the list checks the apex's HTTPS response, and a redirect issued by Vercel's domain settings (for example apex to `www`) is answered by the Vercel edge without this header's `includeSubDomains; preload`.
+- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` (owner approved preload). The header alone does nothing extra: preloading starts when the domain is submitted at hstspreload.org, after which browsers refuse plain HTTP for the domain and every subdomain, and removal takes months. The site uses its `*.vercel.app` address, and the whole `.app` top-level domain is already on the preload list, so there is nothing to submit. For a custom domain later: submit only once it is live and every subdomain serves HTTPS. The apex must be the host that serves the app: the list checks the apex's HTTPS response, and a redirect issued by Vercel's domain settings (for example apex to `www`) is answered by the Vercel edge without this header's `includeSubDomains; preload`.
 - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 - The proxy skips static assets (`/_next/static`, `/brand/*`, icons), so `next.config.ts` sets the same five static headers (not the CSP) for every path.
 

@@ -36,6 +36,8 @@ The users are only created on a fresh Docker volume. For an existing volume, see
 | `MONGODB_URI_READ` | Read-only connection string (user `bisaat_ro`), used by the site |
 | `MONGODB_URI_WRITE` | Read-write connection string (user `bisaat_rw`), used only by `npm run seed` |
 | `MONGODB_DB` | Database name (`bisaat`) |
+| `DATA_ENCRYPTION_KEY` | Server key that encrypts personal data before it is stored (`npm run key:generate`). Not used by any phase 1 feature yet; required once bookings exist. Back it up: without it encrypted data cannot be recovered |
+| `DATA_ENCRYPTION_KEY_PREVIOUS` | Only during a key rotation: the old key, for decrypting values not yet re-encrypted |
 | `RATE_LIMIT_PER_MINUTE` | API requests per minute per IP before 429 (default 60) |
 | `SITE_URL` | Public base URL, used for metadata, Open Graph and structured data. Set it in production to the canonical domain. If unset on Vercel production, the project's production domain (`VERCEL_PROJECT_PRODUCTION_URL`, chosen by Vercel) is used, which may be a host that redirects. Previews use their own host |
 | `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD` | Docker compose: MongoDB root user |
@@ -54,6 +56,7 @@ The users are only created on a fresh Docker volume. For an existing volume, see
 | `npm run compare` | Screenshots the reference page and the app (serve it on port 3200 first, or pass a URL or set `E2E_BASE_URL`; `SITE_URL` is deliberately ignored so a production value can never be targeted) for all six zones, light and dark, with mismatch percentages in `test-results/compare/`. Add `--webkit` for Safari. Fails if the canvas region (room pixels, hotspot pills excluded) differs by more than 0.5%, the header (opening status `#open` masked, since it depends on the date) or sheet by more than 1.0%, or hotspot boxes differ by more than 2 px. Chromium's rendering of the reference page varies slightly between loads (text anti-aliasing; the app's shots are byte-identical), so a failing view re-shoots the reference, never the app, up to 3 times and keeps the closest |
 | `npm run measure:iphone` | Frame-time and load measurements for iPhone-class devices |
 | `npm run seed` | Seed MongoDB (see below) |
+| `npm run key:generate` | Print a new `DATA_ENCRYPTION_KEY` |
 
 First e2e run: `npx playwright install webkit chromium`.
 
@@ -86,13 +89,13 @@ If a document is invalid or the database is down, visitors see the bundled seed 
 Vercel builds and runs the app with no extra configuration: `vercel.json` only pins functions to Mumbai (`bom1`), next to the visitors and the database.
 
 1. **Atlas.** Create the cluster in AWS Mumbai (`ap-south-1`) so it sits next to the functions. Create two database users scoped to the `bisaat` database: `bisaat_ro` with `read`, and `bisaat_rw` with `readWrite` plus a custom role granting `collMod`, `createCollection` and `createIndex` on `bisaat` (the same roles as `docker/mongo-init/01-users.js`). Use the `mongodb+srv://` strings Atlas gives you; they use TLS, which the app requires in production.
-2. **Network access.** Vercel functions have no fixed outbound IP unless the project buys Vercel Static IPs (Pro or Enterprise, paid add-on). With Static IPs, put only those addresses in the Atlas IP Access List. Without them, Atlas must allow `0.0.0.0/0`, and the protection is the TLS connection, the strong per-user password and the read-only user the site uses. See `docs/security.md`.
+2. **Network access.** Atlas allows connections by IP address only, and Vercel functions have no fixed outbound IP without the paid Static IPs add-on (not bought for now). So the Atlas IP Access List has `0.0.0.0/0`. The database is protected by TLS, long random per-user passwords, the site holding only the read-only user, and server-side encryption of personal data. Restricting by domain is not possible: a domain names where visitors arrive, not where the app's database connections come from. See `docs/security.md`.
 3. **Seed once**, from your machine (add your own IP to the Atlas access list temporarily): `MONGODB_URI_WRITE='<rw srv uri>' MONGODB_DB=bisaat npm run seed -- --if-empty`. The write URI never goes into Vercel.
-4. **Vercel project env vars**: `MONGODB_URI_READ` and `MONGODB_DB` (Production and Preview), `SITE_URL=https://<domain>` (Production), optionally `RATE_LIMIT_PER_MINUTE`. Mark the URI as sensitive.
-5. **Domain.** Add it in Vercel; Vercel serves HTTPS and redirects HTTP. Make the apex (`<domain>`, not `www`) the primary domain that serves the site, and let `www` redirect to it. The preload list checks the apex's HTTPS response, and only responses from the app carry `includeSubDomains; preload`: a redirect served by Vercel's own domain settings does not. Once the domain is final and every subdomain serves HTTPS, submit the apex at hstspreload.org (see `docs/security.md`).
+4. **Vercel project env vars**: `MONGODB_URI_READ`, `MONGODB_DB` and `DATA_ENCRYPTION_KEY` (Production and Preview; the same key wherever the same database is used), optionally `RATE_LIMIT_PER_MINUTE`. Mark the URI and the key as sensitive. `SITE_URL` can stay unset while the site uses its `*.vercel.app` address: Vercel's production URL is used automatically. Mark the URI as sensitive.
+5. **Domain.** The site uses the `<project>.vercel.app` address Vercel assigns. The whole `.app` top-level domain is on browsers' HSTS preload list, so HTTPS is enforced with nothing to submit. If a custom domain is added later: make the apex the primary domain in Vercel, set `SITE_URL`, and see `docs/security.md` before submitting it for preload.
 6. **Rate limiting.** The in-app limit is per function instance. Add a Vercel Firewall rate-limit rule on `/api/*` for a real limit.
 
-Checks after the first deploy: `curl -sI https://<domain>/ | grep -i strict-transport` must show `includeSubDomains; preload` (check `https://www.<domain>/` too), and `curl -s https://<domain>/api/content | grep source` should say `"db"`.
+Checks after the first deploy: `curl -sI https://<project>.vercel.app/ | grep -i strict-transport` should show the HSTS header, and `curl -s https://<project>.vercel.app/api/content | grep source` should say `"db"`.
 
 ### Other hosts
 
@@ -129,4 +132,3 @@ docs/security.md    protection policies as implemented
 
 - **Room accuracy.** The code-drawn room is an estimate (36 ft wide, 16 ft left wall, 19 ft right wall, furniture from a verbal description). Real 360 degree photos follow after the interior is finished; they replace it through the `RoomRenderer` seam above.
 - **Vector logo.** The brand kit is PNG only (`brand/`). The header still uses the logo extracted from the visiting card; an SVG would sharpen it on high-density screens.
-- **Atlas network access.** Whether to buy Vercel Static IPs (allowlist only those) or allow `0.0.0.0/0` in Atlas.
